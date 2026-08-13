@@ -154,6 +154,12 @@ The resulting route, trip and stop IDs are from the Complete GTFS namespace. The
 application explicitly keeps that namespace separate from realtime `service_id`
 values used by Trip Updates and Vehicle Positions.
 
+Building the persistent index is a deployment-sized operation rather than a cheap
+interactive lookup. The current official bundle is roughly 286 MB and produced a
+roughly 515 MB SQLite index in about 28 seconds during verification. Reserve at least
+1.36 GB of temporary working space and pre-warm this cache before latency-sensitive
+route-timetable calls. Warm lookups use the persistent index.
+
 ## Live Traffic hazards pipeline
 
 Live Traffic hazards consume current `/open` GeoJSON hazard feeds only. The adapter:

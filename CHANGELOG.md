@@ -21,7 +21,8 @@
 - Extend Trip Planner stop search, departures, journey planning, and alerts to all
   five public-transport modes while retaining the train-plus-bus default.
 - Add `nsw_live_traffic_hazards`, using strict GeoJSON wire validation over
-  allowlisted current hazard feeds with suburb or coordinate/radius filtering.
+  allowlisted current hazard feeds with suburb or coordinate/radius filtering;
+  accept the integer and finite numeric hazard IDs both emitted by the live API.
 - Align release metadata, manifests, AI-facing docs, and packaging tests so
   `plugin.yaml`, Python metadata, and the catalog expose the same 22 tools.
 

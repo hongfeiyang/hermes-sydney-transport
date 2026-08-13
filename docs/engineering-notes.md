@@ -92,6 +92,13 @@ trip, and stop identifiers distinct from realtime service IDs. The public contra
 explicitly warns that published timetables are schedule data, not live evidence that
 services are operating.
 
+The Complete GTFS index is intentionally persistent but expensive to create. An
+August 2026 production smoke downloaded a roughly 286 MB ZIP, indexed 5,003,732
+`stop_times` into a roughly 515 MB SQLite database, and took about 28 seconds. A
+refresh can temporarily hold the archive, old database, and replacement database at
+the same time, so deployments should reserve at least 1.36 GB of working space and
+pre-warm the route-timetable cache before latency-sensitive use.
+
 ## Live Traffic hazards
 
 Live Traffic hazards are treated as strict GeoJSON, not free-form JSON. The adapter:
@@ -141,6 +148,11 @@ Deployment additionally requires credentialed live checks for:
 - live hazard filtering;
 - traffic station, yearly summary, and both hourly table shapes;
 - real Hermes `PluginManager` discovery and registry dispatch.
+
+The 0.6.0 deployment gate ran the real Hermes 0.20.0 directory loader, registered all
+22 tools with no plugin error, and completed bounded Trip Planner, Alerts v2, Live
+Traffic, accessibility, and Complete GTFS calls without logging credentials or
+response bodies.
 
 No background polling or persistent external database is created. Users should
 implement opt-in monitoring through Hermes cron.

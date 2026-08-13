@@ -83,10 +83,14 @@ public repository. Tests use small sanitized fixtures only.
 - [x] `./scripts/verify.sh types`
 - [x] `./scripts/verify.sh test`
 - [x] `./scripts/verify.sh package`
-- [ ] Real Hermes `PluginManager` directory-load smoke
-- [ ] Credentialed TfNSW smoke without logging secrets or response bodies
+- [x] Real Hermes `PluginManager` directory-load smoke
+- [x] Credentialed TfNSW smoke without logging secrets or response bodies
 - [x] README, tool reference, architecture notes, and manifest updated
 - [x] Version raised consistently
 
-The remaining unchecked release gates require runtime access to a real Hermes
-installation and live TfNSW credentials.
+Runtime verification used Hermes 0.20.0 on Python 3.13.5. The real directory loader
+registered all 22 tools with no plugin error. Bounded live calls covered Trip Planner
+stop search, Alerts v2 route disruptions, Live Traffic hazards, an exact Central
+accessibility lookup, and a Complete GTFS route timetable lookup. Verification logged
+only success, counts, provenance, and error metadata; it did not log credentials or
+upstream response bodies.

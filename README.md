@@ -228,6 +228,9 @@ the [architecture contract](docs/architecture.md).
 - Static accessibility inventory never proves current lift operation.
 - Route timetable IDs come from the Complete GTFS namespace and must not be treated
   as realtime `service_id` values.
+- The first Complete GTFS timetable refresh is intentionally heavy (about 28 seconds
+  and a 515 MB index in the August 2026 verification). Reserve at least 1.36 GB of
+  working space and pre-warm it before latency-sensitive use.
 - Static GTFS indexes and caches are isolated by mode or data source.
 - Realtime feeds use a short thread-safe single-flight cache; the plugin starts no
   hidden polling thread.
