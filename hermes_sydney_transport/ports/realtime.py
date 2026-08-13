@@ -12,6 +12,9 @@ from typing import Protocol
 class TransportMode(StrEnum):
     TRAIN = "train"
     BUS = "bus"
+    METRO = "metro"
+    LIGHT_RAIL = "light_rail"
+    FERRY = "ferry"
 
 
 class TripRelationship(StrEnum):

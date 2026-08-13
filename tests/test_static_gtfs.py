@@ -13,30 +13,45 @@ from hermes_sydney_transport.models.errors import DomainError as TfnswApiError
 
 
 class FakeTransport:
-    def __init__(self, body: bytes):
+    def __init__(self, body: bytes | tuple[bytes, ...]):
         self.body = body
         self.calls = []
 
     def get(self, endpoint, **kwargs):
         self.calls.append((endpoint, kwargs))
+        body = self.body[0] if isinstance(self.body, tuple) else self.body
         return BinaryResponse(
-            data=self.body,
+            data=body,
             content_type="application/zip",
             last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
         )
 
+    def get_all(self, endpoint, **kwargs):
+        self.calls.append((endpoint, kwargs))
+        bodies = self.body if isinstance(self.body, tuple) else (self.body,)
+        return tuple(
+            BinaryResponse(
+                data=body,
+                content_type="application/zip",
+                last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
+            )
+            for body in bodies
+        )
+
 
 class NotModifiedTransport:
-    def __init__(self):
+    def __init__(self, body: bytes):
+        self.body = body
         self.calls = []
 
-    def get(self, endpoint, **kwargs):
+    def get_all(self, endpoint, **kwargs):
         self.calls.append((endpoint, kwargs))
-        return BinaryResponse(
-            data=None,
-            content_type="application/zip",
-            last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
-            not_modified=True,
+        return (
+            BinaryResponse(
+                data=self.body,
+                content_type="application/zip",
+                last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
+            ),
         )
 
 
@@ -89,45 +104,79 @@ class StaticGtfsTests(unittest.TestCase):
             self.assertIsNotNone(initial.get_trip("trip-1"))
             initial.close()
 
-            transport = NotModifiedTransport()
+            transport = NotModifiedTransport(_bundle())
             reopened = StaticGtfsRepository(transport, database_path=path)
             self.addCleanup(reopened.close)
             trip = reopened.get_trip("trip-1")
 
             self.assertIsNotNone(trip)
             self.assertEqual(trip.route_short_name, "T1")
-            self.assertEqual(
-                transport.calls[0][1]["if_modified_since"],
-                "Wed, 12 Aug 2026 08:00:00 GMT",
+            self.assertEqual(transport.calls[0][0], "static_schedule")
+
+    def test_multi_archive_static_collision_is_deterministic_last_wins(self):
+        transport = FakeTransport(
+            (
+                _bundle(
+                    route_short_name="L1",
+                    headsign="Dulwich Hill",
+                    first_stop_id="old-p1",
+                    second_stop_id="old-p2",
+                ),
+                _bundle(
+                    route_short_name="L1X",
+                    headsign="Central",
+                    first_stop_id="new-p1",
+                    second_stop_id="new-p2",
+                ),
             )
+        )
+        repository = StaticGtfsRepository(transport)
+        self.addCleanup(repository.close)
+
+        trip = repository.get_trip("trip-1")
+
+        self.assertIsNotNone(trip)
+        self.assertEqual(trip.route_short_name, "L1X")
+        self.assertEqual(trip.headsign, "Central")
+        self.assertEqual(
+            [(stop.sequence, stop.stop_id) for stop in trip.stop_times],
+            [(1, "new-p1"), (2, "new-p2")],
+        )
 
 
-def _bundle(*, extra_stops: str = "") -> bytes:
+def _bundle(
+    *,
+    extra_stops: str = "",
+    route_short_name: str = "T1",
+    headsign: str = "Parramatta",
+    first_stop_id: str = "central-p1",
+    second_stop_id: str = "parra-p2",
+) -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
             "routes.txt",
             "route_id,route_short_name,route_long_name\n"
-            "route-1,T1,North Shore & Western Line\n",
+            f"route-1,{route_short_name},North Shore & Western Line\n",
         )
         archive.writestr(
             "stops.txt",
             "stop_id,stop_name,parent_station,platform_code\n"
             "central,Central Station,,\n"
-            "central-p1,Central Station Platform 1,central,P01\n"
+            f"{first_stop_id},First platform,central,P01\n"
             "parra,Parramatta Station,,\n"
-            "parra-p2,Parramatta Station Platform 2,parra,\n" + extra_stops,
+            f"{second_stop_id},Second platform,parra,\n" + extra_stops,
         )
         archive.writestr(
             "trips.txt",
             "route_id,service_id,trip_id,trip_headsign,direction_id,vehicle_category_id\n"
-            "route-1,weekday,trip-1,Parramatta,0,B8\n",
+            f"route-1,weekday,trip-1,{headsign},0,B8\n",
         )
         archive.writestr(
             "stop_times.txt",
             "trip_id,arrival_time,departure_time,stop_id,stop_sequence,stop_headsign\n"
-            "trip-1,18:00:00,18:00:00,central-p1,1,Parramatta\n"
-            "trip-1,18:25:00,18:25:00,parra-p2,2,Parramatta\n",
+            f"trip-1,18:00:00,18:00:00,{first_stop_id},1,Parramatta\n"
+            f"trip-1,18:25:00,18:25:00,{second_stop_id},2,Parramatta\n",
         )
     return output.getvalue()
 

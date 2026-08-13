@@ -20,12 +20,12 @@ class FakeContext:
 
 
 class RegistrationTests(unittest.TestCase):
-    def test_registers_twelve_namespaced_tools_in_two_toolsets(self):
+    def test_registers_twenty_two_namespaced_tools_in_two_toolsets(self):
         context = FakeContext()
 
         register(context)
 
-        self.assertEqual(len(context.registrations), 12)
+        self.assertEqual(len(context.registrations), 22)
         names = {item["name"] for item in context.registrations}
         self.assertEqual(
             names,
@@ -35,10 +35,20 @@ class RegistrationTests(unittest.TestCase):
                 "sydney_transport_departures",
                 "sydney_transport_plan_trip",
                 "sydney_transport_alerts",
+                "sydney_transport_route_disruptions",
+                "sydney_transport_stop_accessibility",
+                "sydney_transport_route_timetable",
                 "sydney_transport_train_service_status",
                 "sydney_transport_train_vehicle_position",
                 "sydney_transport_bus_service_status",
                 "sydney_transport_bus_vehicle_position",
+                "sydney_transport_metro_service_status",
+                "sydney_transport_metro_vehicle_position",
+                "sydney_transport_light_rail_service_status",
+                "sydney_transport_light_rail_vehicle_position",
+                "sydney_transport_ferry_service_status",
+                "sydney_transport_ferry_vehicle_position",
+                "nsw_live_traffic_hazards",
                 "nsw_traffic_count_stations",
                 "nsw_traffic_volume_summary",
                 "nsw_traffic_volume_hourly",
@@ -69,11 +79,25 @@ class RegistrationTests(unittest.TestCase):
             patch.object(registration, "protobuf_available", return_value=False),
         ):
             register(context)
-            availability = [item["check_fn"]() for item in context.registrations]
+            availability = {
+                item["name"]: item["check_fn"]() for item in context.registrations
+            }
 
-        self.assertEqual(availability[:5], [True] * 5)
-        self.assertEqual(availability[5:9], [False] * 4)
-        self.assertEqual(availability[9:], [True] * 3)
+        realtime = {
+            "sydney_transport_route_disruptions",
+            "sydney_transport_train_service_status",
+            "sydney_transport_train_vehicle_position",
+            "sydney_transport_bus_service_status",
+            "sydney_transport_bus_vehicle_position",
+            "sydney_transport_metro_service_status",
+            "sydney_transport_metro_vehicle_position",
+            "sydney_transport_light_rail_service_status",
+            "sydney_transport_light_rail_vehicle_position",
+            "sydney_transport_ferry_service_status",
+            "sydney_transport_ferry_vehicle_position",
+        }
+        for name, available in availability.items():
+            self.assertEqual(available, name not in realtime)
 
     def test_container_is_reused_for_identical_validated_settings(self):
         provider = registration._ContainerProvider()

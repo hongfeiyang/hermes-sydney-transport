@@ -82,6 +82,20 @@ class BinaryTransportTests(unittest.TestCase):
         self.assertIsNone(result.data)
         self.assertTrue(not_modified.closed)
 
+    def test_multi_feed_mode_uses_get_all_and_correct_first_url(self):
+        transport = UrllibBinaryTransport("test-key", mode="light_rail")
+        with patch.object(
+            transport._opener, "open", return_value=FakeResponse(b"protobuf")
+        ) as mocked_open:
+            result = transport.get_all("trip_updates")
+
+        self.assertEqual(len(result), 4)
+        first_request = mocked_open.call_args_list[0].args[0]
+        self.assertEqual(
+            first_request.full_url,
+            "https://api.transport.nsw.gov.au/v2/gtfs/realtime/lightrail/innerwest",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

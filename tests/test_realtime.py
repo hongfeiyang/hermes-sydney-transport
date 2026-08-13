@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from hermes_sydney_transport.adapters.tfnsw.realtime_decoder import (
     ProtobufRealtimeDecoder,
+    decode_alerts,
     decode_trip_updates,
     decode_vehicle_positions,
 )
@@ -22,12 +23,18 @@ from hermes_sydney_transport.application.realtime import (
 )
 from hermes_sydney_transport.application.realtime.mode_policy import (
     BUS_POLICY,
+    FERRY_POLICY,
+    LIGHT_RAIL_POLICY,
+    METRO_POLICY,
     TRAIN_POLICY,
 )
 from hermes_sydney_transport.models.errors import DomainError as TfnswApiError
 from hermes_sydney_transport.models.inputs import (
     BusServiceStatusInput,
     BusVehiclePositionInput,
+    FerryServiceStatusInput,
+    LightRailVehiclePositionInput,
+    MetroServiceStatusInput,
     ServiceStatusInput,
     VehiclePositionInput,
 )
@@ -40,6 +47,7 @@ from hermes_sydney_transport.ports.realtime import (
     StaticStopReference,
     StaticStopTime,
     StaticTrip,
+    TransportMode,
 )
 from hermes_sydney_transport.ports.trip_planner import ServiceResolution
 from hermes_sydney_transport.proto import tfnsw_gtfs_realtime_pb2 as pb
@@ -72,7 +80,13 @@ class RealtimeClient:
         repository = TfnswRealtimeRepository(
             transport, ProtobufRealtimeDecoder(), cache_seconds=0
         )
-        policy = TRAIN_POLICY if mode == "train" else BUS_POLICY
+        policy = {
+            "train": TRAIN_POLICY,
+            "bus": BUS_POLICY,
+            "metro": METRO_POLICY,
+            "light_rail": LIGHT_RAIL_POLICY,
+            "ferry": FERRY_POLICY,
+        }[mode]
         clock = FixedClock(now)
         self._status = GetServiceStatus(
             repository, trip_planner, static_gtfs, clock, policy
@@ -96,6 +110,12 @@ class FakeBinaryTransport:
     def get(self, endpoint, **kwargs):
         self.calls.append((endpoint, kwargs))
         return SimpleNamespace(data=self.feeds[endpoint])
+
+    def get_all(self, endpoint, **kwargs):
+        self.calls.append((endpoint, kwargs))
+        payload = self.feeds[endpoint]
+        items = payload if isinstance(payload, tuple) else (payload,)
+        return tuple(SimpleNamespace(data=item) for item in items)
 
 
 class FakeTripPlanner:
@@ -307,6 +327,24 @@ class RealtimeClientTests(unittest.TestCase):
             decode_trip_updates(b"not-a-protobuf")
         self.assertEqual(raised.exception.code, "invalid_realtime_feed")
 
+    def test_alert_decoder_preserves_v2_selectors_period_and_severity(self):
+        records = decode_alerts(_alert_feed(), TransportMode.TRAIN, "sydneytrains")
+
+        self.assertEqual(len(records), 1)
+        alert = records[0]
+        self.assertEqual(alert.id, "trackwork-1")
+        self.assertEqual(alert.source_feed, "sydneytrains")
+        self.assertEqual(alert.cause, "maintenance")
+        self.assertEqual(alert.effect, "modified_service")
+        self.assertEqual(alert.severity, "warning")
+        self.assertEqual(alert.route_ids, ("T1",))
+        self.assertEqual(alert.stop_ids, ("G204313",))
+        self.assertEqual(alert.trip_ids, (SERVICE_ID,))
+        self.assertEqual(
+            alert.active_periods[0].start,
+            datetime(2026, 8, 12, 7, 0, tzinfo=UTC),
+        )
+
     def test_realtime_gateway_fetches_and_decodes_once_per_cache_window(self):
         transport = FakeBinaryTransport(trip_updates=_trip_update_feed())
         repository = TfnswRealtimeRepository(
@@ -337,6 +375,39 @@ class RealtimeClientTests(unittest.TestCase):
         self.assertTrue(all(item.update is snapshots[0].update for item in snapshots))
         self.assertEqual(len(transport.calls), 1)
         self.assertEqual(repository.stats().trip_cache_hits, 15)
+
+    def test_realtime_gateway_keeps_first_feed_when_service_id_repeats(self):
+        transport = FakeBinaryTransport(
+            trip_updates=(
+                _trip_update_feed(route_id="route-first"),
+                _trip_update_feed(route_id="route-second"),
+            )
+        )
+        repository = TfnswRealtimeRepository(
+            transport, ProtobufRealtimeDecoder(), cache_seconds=0
+        )
+
+        snapshot = repository.service_snapshot(SERVICE_ID)
+
+        self.assertIsNotNone(snapshot.update)
+        self.assertEqual(snapshot.update.route_id, "route-first")
+
+    def test_realtime_gateway_keeps_first_vehicle_when_service_id_repeats(self):
+        transport = FakeBinaryTransport(
+            vehicle_positions=(
+                _vehicle_feed(route_id="route-first", label="first"),
+                _vehicle_feed(route_id="route-second", label="second"),
+            )
+        )
+        repository = TfnswRealtimeRepository(
+            transport, ProtobufRealtimeDecoder(), cache_seconds=0
+        )
+
+        snapshot = repository.vehicle_snapshot(SERVICE_ID)
+
+        self.assertIsNotNone(snapshot.vehicle)
+        self.assertEqual(snapshot.vehicle.route_id, "route-first")
+        self.assertEqual(snapshot.vehicle.label, "first")
 
     def test_cancelled_trip_and_static_failure_degrade_without_guessing(self):
         transport = FakeBinaryTransport(trip_updates=_cancelled_trip_feed())
@@ -501,6 +572,63 @@ class RealtimeClientTests(unittest.TestCase):
         self.assertEqual(result.occupancy.carriages, [])
         self.assertIn("bus", result.occupancy.coverage_note.lower())
 
+    def test_metro_status_uses_metro_mode_without_trip_delay_fallback(self):
+        client = RealtimeClient(
+            "test-key",
+            mode="metro",
+            transport=FakeBinaryTransport(trip_updates=_trip_delay_feed()),
+            trip_planner=self.planner,
+            static_gtfs=self.static,
+            now=lambda: self.now,
+        )
+        result = ServiceStatusResult.model_validate(
+            client.service_status_request(
+                MetroServiceStatusInput.model_validate({"service_id": SERVICE_ID})
+            )
+        )
+
+        self.assertEqual(result.query.mode, "metro")
+        self.assertEqual(result.service.mode, "metro")
+        self.assertEqual(result.stop_updates[0].prediction_source, "schedule")
+
+    def test_light_rail_vehicle_ignores_train_carriage_extension(self):
+        client = RealtimeClient(
+            "test-key",
+            mode="light_rail",
+            transport=FakeBinaryTransport(vehicle_positions=_vehicle_feed()),
+            trip_planner=self.planner,
+            static_gtfs=self.static,
+            now=lambda: self.now,
+        )
+        result = VehiclePositionResult.model_validate(
+            client.vehicle_position_request(
+                LightRailVehiclePositionInput.model_validate({"service_id": SERVICE_ID})
+            )
+        )
+
+        self.assertEqual(result.service.mode, "light_rail")
+        self.assertEqual(result.occupancy.source, "vehicle")
+        self.assertEqual(result.occupancy.carriages, [])
+
+    def test_ferry_status_uses_ferry_mode_without_trip_delay_fallback(self):
+        client = RealtimeClient(
+            "test-key",
+            mode="ferry",
+            transport=FakeBinaryTransport(trip_updates=_trip_delay_feed()),
+            trip_planner=self.planner,
+            static_gtfs=self.static,
+            now=lambda: self.now,
+        )
+        result = ServiceStatusResult.model_validate(
+            client.service_status_request(
+                FerryServiceStatusInput.model_validate({"service_id": SERVICE_ID})
+            )
+        )
+
+        self.assertEqual(result.query.mode, "ferry")
+        self.assertEqual(result.service.mode, "ferry")
+        self.assertEqual(result.stop_updates[0].prediction_source, "schedule")
+
 
 def _feed_header(feed):
     feed.header.gtfs_realtime_version = "2.0"
@@ -513,14 +641,38 @@ def _empty_feed() -> bytes:
     return feed.SerializeToString()
 
 
-def _trip_update_feed(*, include_bundle_cancellation: bool = False) -> bytes:
+def _alert_feed() -> bytes:
+    feed = pb.FeedMessage()
+    _feed_header(feed)
+    entity = feed.entity.add()
+    entity.id = "trackwork-1"
+    alert = entity.alert
+    period = alert.active_period.add()
+    period.start = int(datetime(2026, 8, 12, 7, 0, tzinfo=UTC).timestamp())
+    period.end = int(datetime(2026, 8, 12, 9, 0, tzinfo=UTC).timestamp())
+    selector = alert.informed_entity.add()
+    selector.route_id = "T1"
+    selector.stop_id = "G204313"
+    selector.trip.trip_id = SERVICE_ID
+    alert.cause = alert.MAINTENANCE
+    alert.effect = alert.MODIFIED_SERVICE
+    alert.severity_level = alert.WARNING
+    alert.header_text.translation.add(text="Trackwork")
+    alert.description_text.translation.add(text="Use alternative transport")
+    alert.url.translation.add(text="https://transportnsw.info/alerts")
+    return feed.SerializeToString()
+
+
+def _trip_update_feed(
+    *, include_bundle_cancellation: bool = False, route_id: str = "NTH_2a"
+) -> bytes:
     feed = pb.FeedMessage()
     _feed_header(feed)
     entity = feed.entity.add()
     entity.id = "trip-1"
     update = entity.trip_update
     update.trip.trip_id = SERVICE_ID
-    update.trip.route_id = "NTH_2a"
+    update.trip.route_id = route_id
     update.trip.schedule_relationship = update.trip.REPLACEMENT
 
     first = update.stop_time_update.add()
@@ -555,15 +707,20 @@ def _trip_delay_feed() -> bytes:
     return feed.SerializeToString()
 
 
-def _vehicle_feed(*, wheelchair: int = 1) -> bytes:
+def _vehicle_feed(
+    *,
+    wheelchair: int = 1,
+    route_id: str = "NTH_2a",
+    label: str = "18:00 Central to Parramatta",
+) -> bytes:
     feed = pb.FeedMessage()
     _feed_header(feed)
     entity = feed.entity.add()
     entity.id = "vehicle-1"
     vehicle = entity.vehicle
     vehicle.trip.trip_id = SERVICE_ID
-    vehicle.trip.route_id = "NTH_2a"
-    vehicle.vehicle.label = "18:00 Central to Parramatta"
+    vehicle.trip.route_id = route_id
+    vehicle.vehicle.label = label
     detail = vehicle.vehicle.Extensions[pb.tfnsw_vehicle_descriptor]
     detail.vehicle_model = "Waratah B Set"
     detail.air_conditioned = True

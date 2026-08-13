@@ -1,20 +1,21 @@
 # Hermes Sydney Transport
 
-> Open-source Hermes Agent plugin for Sydney trains, Sydney buses, TfNSW Trip Planner,
-> GTFS-Realtime Trip Updates and Vehicle Positions, service alerts, and historical NSW
-> Roads Traffic Volume Counts. Python 3.12-3.13; MIT licensed; requires TFNSW_API_KEY.
+> Open-source Hermes Agent plugin for Sydney public transport, GTFS-Realtime route
+> disruptions and vehicle tracking, stop accessibility, Complete GTFS timetables,
+> live NSW road hazards, and historical NSW Roads Traffic Volume Counts. Python
+> 3.12-3.13; MIT licensed; requires TFNSW_API_KEY.
 
 Canonical repository: https://github.com/hongfeiyang/hermes-sydney-transport
 Plugin name: sydney-transport
 Python package: hermes_sydney_transport
 Hermes entry point: hermes_agent.plugins / sydney-transport
-Current version: 0.5.0
+Current version: 0.6.0
 
 ## Start here
 
 - [README](https://github.com/hongfeiyang/hermes-sydney-transport/blob/main/README.md): overview, install, examples, limitations and development
-- [Tool reference](https://github.com/hongfeiyang/hermes-sydney-transport/blob/main/docs/tool-reference.md): inputs, outputs and call sequences for all 12 tools
-- [How it works](https://github.com/hongfeiyang/hermes-sydney-transport/blob/main/docs/how-it-works.md): request, Trip Planner, GTFS-Realtime, static GTFS and road-count pipelines
+- [Tool reference](https://github.com/hongfeiyang/hermes-sydney-transport/blob/main/docs/tool-reference.md): inputs, outputs and call sequences for all 22 tools
+- [How it works](https://github.com/hongfeiyang/hermes-sydney-transport/blob/main/docs/how-it-works.md): request, Trip Planner, GTFS-Realtime, static accessibility/timetable, live hazards and road-count pipelines
 - [Architecture](https://github.com/hongfeiyang/hermes-sydney-transport/blob/main/docs/architecture.md): normative dependency and extension contracts
 - [Contributing](https://github.com/hongfeiyang/hermes-sydney-transport/blob/main/CONTRIBUTING.md): the only supported extension path and required checks
 
@@ -25,10 +26,20 @@ sydney_transport_nearby_stops
 sydney_transport_departures
 sydney_transport_plan_trip
 sydney_transport_alerts
+sydney_transport_route_disruptions
+sydney_transport_stop_accessibility
+sydney_transport_route_timetable
 sydney_transport_train_service_status
 sydney_transport_train_vehicle_position
 sydney_transport_bus_service_status
 sydney_transport_bus_vehicle_position
+sydney_transport_metro_service_status
+sydney_transport_metro_vehicle_position
+sydney_transport_light_rail_service_status
+sydney_transport_light_rail_vehicle_position
+sydney_transport_ferry_service_status
+sydney_transport_ferry_vehicle_position
+nsw_live_traffic_hazards
 nsw_traffic_count_stations
 nsw_traffic_volume_summary
 nsw_traffic_volume_hourly
@@ -38,8 +49,12 @@ nsw_traffic_volume_hourly
 - Use stop search before departures or trip planning.
 - Prefer departures.service_id for realtime tools.
 - trip_code is not a GTFS trip ID; fallback resolution also requires stop_id.
+- Route disruptions come from GTFS-Realtime Alerts v2 and preserve exact source feed provenance.
+- Stop accessibility combines static facilities/lifts with optional current accessibility warnings.
+- Route timetable uses Complete GTFS route/trip/stop IDs, which must not be reused as realtime identifiers.
 - Missing estimates are unknown, not on time.
 - Missing vehicle or occupancy data is unavailable, not stationary or empty.
+- Live road hazards are current operational incidents and roadworks, not travel-time routing.
 - Road traffic counts are historical observations, not live congestion.
 - Realtime outputs expose freshness, join, prediction, inference and confidence data.
 - Tool outputs are JSON strings in stable {ok,data|error} envelopes.

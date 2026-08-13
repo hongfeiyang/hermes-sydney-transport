@@ -92,7 +92,7 @@ values may cross into application code.
 ### 2.3 Application — `application/`
 
 Owns one use case per module or cohesive use-case group. It orchestrates ports and
-implements business policy: identity resolution, train/bus differences, confidence,
+implements business policy: identity resolution, mode differences, confidence,
 progress, cancellation precedence, and bounds that span multiple sources.
 
 Must:
@@ -228,8 +228,8 @@ shared error module. Raw mappings, response objects, protobuf messages, open fil
 and exceptions from vendor libraries remain inside adapters.
 
 For realtime capabilities the required internal stages are `resolve -> snapshot ->
-static join -> timeline -> policy -> result`. Train and bus both traverse these stages;
-their differences are values in one `ModePolicy`, not parallel implementations.
+static join -> timeline -> policy -> result`. Every supported transport mode traverses
+these stages; differences are values in one `ModePolicy`, not parallel implementations.
 
 ## 4. Error contract
 

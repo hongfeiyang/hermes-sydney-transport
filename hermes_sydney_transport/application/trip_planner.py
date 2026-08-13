@@ -32,7 +32,7 @@ from .trip_planner_policy import (
 )
 
 _SOURCE = "TfNSW Trip Planner API"
-_MODE_CODES = {"train": 1, "bus": 5}
+_MODE_CODES = {"train": 1, "metro": 2, "light_rail": 4, "bus": 5, "ferry": 9}
 
 
 class SearchStops:
@@ -162,7 +162,7 @@ class PlanJourney:
             count=len(journeys),
             system_messages=list(board.system_messages),
             mode_note=(
-                "TfNSW was restricted to the requested train/bus modes; walking "
+                "TfNSW was restricted to the requested public-transport modes; walking "
                 "interchanges can still appear between public-transport legs."
             ),
         )

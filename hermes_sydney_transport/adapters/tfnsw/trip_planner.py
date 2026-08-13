@@ -47,7 +47,13 @@ _ALLOWED_PATHS = frozenset(
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 _MAX_ALERT_TEXT = 2_000
-_MOT_CODES = {"train": 1, "bus": 5}
+_MOT_CODES = {
+    "train": 1,
+    "metro": 2,
+    "light_rail": 4,
+    "bus": 5,
+    "ferry": 9,
+}
 _EXCLUDABLE_MOT_CODES = (1, 2, 4, 5, 7, 9, 11)
 
 
@@ -727,8 +733,14 @@ def _normalise_trip_leg(item: Mapping[str, Any]) -> dict[str, Any]:
     mode = (
         "train"
         if product_class == 1
+        else "metro"
+        if product_class == 2
+        else "light_rail"
+        if product_class == 4
         else "bus"
         if product_class == 5
+        else "ferry"
+        if product_class == 9
         else "walk"
         if product_class in {99, 100} or not transport
         else f"mode_{product_class}"

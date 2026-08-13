@@ -8,21 +8,33 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 
 from hermes_sydney_transport.application.capabilities import Capability
+from hermes_sydney_transport.models.disruption_inputs import RouteDisruptionsInput
 from hermes_sydney_transport.models.inputs import (
     AlertsInput,
     BusServiceStatusInput,
     BusVehiclePositionInput,
     DeparturesInput,
+    FerryServiceStatusInput,
+    FerryVehiclePositionInput,
+    LightRailServiceStatusInput,
+    LightRailVehiclePositionInput,
+    MetroServiceStatusInput,
+    MetroVehiclePositionInput,
     NearbyStopsInput,
     ServiceStatusInput,
     StationSearchInput,
     TripPlanInput,
     VehiclePositionInput,
 )
+from hermes_sydney_transport.models.live_traffic_inputs import LiveTrafficHazardsInput
 from hermes_sydney_transport.models.outputs import (
     AlertsResult,
     NearbyStopsResult,
     StationSearchResult,
+)
+from hermes_sydney_transport.models.static_inputs import (
+    RouteTimetableInput,
+    StopAccessibilityInput,
 )
 from hermes_sydney_transport.models.traffic_inputs import (
     TrafficStationSearchInput,
@@ -48,6 +60,16 @@ class InputModelTests(unittest.TestCase):
             VehiclePositionInput,
             BusServiceStatusInput,
             BusVehiclePositionInput,
+            MetroServiceStatusInput,
+            MetroVehiclePositionInput,
+            LightRailServiceStatusInput,
+            LightRailVehiclePositionInput,
+            FerryServiceStatusInput,
+            FerryVehiclePositionInput,
+            RouteDisruptionsInput,
+            StopAccessibilityInput,
+            RouteTimetableInput,
+            LiveTrafficHazardsInput,
             TrafficStationSearchInput,
             TrafficVolumeSummaryInput,
             TrafficVolumeHourlyInput,

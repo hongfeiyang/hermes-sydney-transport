@@ -1,7 +1,7 @@
 manifest_version: 1
 name: sydney-transport
-version: "0.5.0"
-description: Plan Sydney train and bus travel, track services, and query NSW road traffic counts using official TfNSW data.
+version: "0.6.0"
+description: Plan Sydney public-transport trips, inspect realtime disruptions and vehicles, check accessibility and timetables, and query live and historical NSW road data from official TfNSW sources.
 author: Hermes Sydney Transport contributors
 kind: standalone
 requires_env:
@@ -15,10 +15,20 @@ provides_tools:
   - sydney_transport_departures
   - sydney_transport_plan_trip
   - sydney_transport_alerts
+  - sydney_transport_route_disruptions
+  - sydney_transport_stop_accessibility
+  - sydney_transport_route_timetable
   - sydney_transport_train_service_status
   - sydney_transport_train_vehicle_position
   - sydney_transport_bus_service_status
   - sydney_transport_bus_vehicle_position
+  - sydney_transport_metro_service_status
+  - sydney_transport_metro_vehicle_position
+  - sydney_transport_light_rail_service_status
+  - sydney_transport_light_rail_vehicle_position
+  - sydney_transport_ferry_service_status
+  - sydney_transport_ferry_vehicle_position
+  - nsw_live_traffic_hazards
   - nsw_traffic_count_stations
   - nsw_traffic_volume_summary
   - nsw_traffic_volume_hourly

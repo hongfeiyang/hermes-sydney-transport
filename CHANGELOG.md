@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.0 - 2026-08-14
+
+- Expand the public tool catalog to 22 tools across `sydney_transport` and
+  `nsw_traffic`, covering five realtime public-transport modes plus static
+  accessibility, Complete GTFS route timetables, live road hazards, and historical
+  road-count data.
+- Add `sydney_transport_route_disruptions` backed by GTFS-Realtime Alerts v2 with
+  mode, cause, effect, severity, active-period filtering, and exact source-feed
+  provenance across `sydneytrains`, `nswtrains`, `buses`, `regionbuses`, `metro`,
+  `lightrail`, and `ferries`.
+- Add `sydney_transport_stop_accessibility`, combining exact-stop static facilities
+  and interchange lifts with optional current accessibility warnings while keeping
+  static inventory distinct from current operational status.
+- Add `sydney_transport_route_timetable`, backed by a bounded Complete GTFS SQLite
+  index and explicit namespace separation between Complete GTFS identifiers and
+  realtime `service_id` values.
+- Extend service-status and vehicle-position tools to metro, light rail, and ferry
+  with mode-specific static and realtime feed policy.
+- Extend Trip Planner stop search, departures, journey planning, and alerts to all
+  five public-transport modes while retaining the train-plus-bus default.
+- Add `nsw_live_traffic_hazards`, using strict GeoJSON wire validation over
+  allowlisted current hazard feeds with suburb or coordinate/radius filtering.
+- Align release metadata, manifests, AI-facing docs, and packaging tests so
+  `plugin.yaml`, Python metadata, and the catalog expose the same 22 tools.
+
 ## 0.5.0 - 2026-08-13
 
 - Raise the Python baseline to 3.12 and use PEP 695 type-parameter syntax.

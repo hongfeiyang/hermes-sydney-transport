@@ -113,24 +113,23 @@ class StaticGtfsRepository:
             and now - self._checked_at < _REFRESH_SECONDS
         ):
             return
-        response = self._transport.get(
-            "static_schedule", if_modified_since=self._last_modified
-        )
+        responses = self._transport.get_all("static_schedule")
         self._checked_at = now
-        if response.not_modified:
-            if self._connection is None:
-                raise TfnswApiError(
-                    "static_data_unavailable",
-                    "TfNSW returned not-modified without a local static index.",
-                )
-            return
-        if not response.data:
+        if any(response.data is None for response in responses):
             raise TfnswApiError(
                 "static_data_unavailable",
                 "TfNSW did not return the static timetable bundle.",
                 retryable=True,
             )
-        self._replace_index(response.data, response.last_modified)
+        last_modified = "|".join(response.last_modified or "" for response in responses)
+        if self._connection is not None and last_modified == (
+            self._last_modified or ""
+        ):
+            return
+        self._replace_index(
+            tuple(response.data for response in responses if response.data is not None),
+            last_modified,
+        )
 
     def _open_existing(self) -> None:
         if self._connection is not None or self._database_path is None:
@@ -149,19 +148,28 @@ class StaticGtfsRepository:
         self._connection = connection
         self._last_modified = metadata.get("last_modified") or None
 
-    def _replace_index(self, raw: bytes, last_modified: str | None) -> None:
+    def _replace_index(
+        self, raws: tuple[bytes, ...], last_modified: str | None
+    ) -> None:
         try:
-            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            archives = []
+            for raw in raws:
+                archive = zipfile.ZipFile(io.BytesIO(raw))
                 _validate_archive(archive)
+                archives.append(archive)
+            try:
                 if self._database_path is None:
                     connection = _connect(None)
-                    _build_index(connection, archive, last_modified)
+                    _build_index(connection, tuple(archives), last_modified)
                     old = self._connection
                     self._connection = connection
                     if old is not None:
                         old.close()
                 else:
-                    self._replace_file_index(archive, last_modified)
+                    self._replace_file_index(tuple(archives), last_modified)
+            finally:
+                for archive in archives:
+                    archive.close()
         except zipfile.BadZipFile as exc:
             raise TfnswApiError(
                 "static_data_invalid", "TfNSW returned an invalid static GTFS archive."
@@ -170,7 +178,7 @@ class StaticGtfsRepository:
         self._trips.clear()
 
     def _replace_file_index(
-        self, archive: zipfile.ZipFile, last_modified: str | None
+        self, archives: tuple[zipfile.ZipFile, ...], last_modified: str | None
     ) -> None:
         if self._database_path is None:
             raise RuntimeError("database path is required")
@@ -184,7 +192,7 @@ class StaticGtfsRepository:
             temporary = Path(handle.name)
         connection = _connect(temporary)
         try:
-            _build_index(connection, archive, last_modified)
+            _build_index(connection, archives, last_modified)
             connection.close()
             if self._connection is not None:
                 self._connection.close()
@@ -263,7 +271,7 @@ def _connect(path: Path | None) -> sqlite3.Connection:
 
 def _build_index(
     connection: sqlite3.Connection,
-    archive: zipfile.ZipFile,
+    archives: tuple[zipfile.ZipFile, ...],
     last_modified: str | None,
 ) -> None:
     try:
@@ -298,10 +306,13 @@ def _build_index(
                 ("last_modified", last_modified or ""),
             ),
         )
-        _load_routes(connection, archive)
-        _load_stops(connection, archive)
-        _load_trips(connection, archive)
-        _load_stop_times(connection, archive)
+        for archive in archives:
+            _load_routes(connection, archive)
+        for archive in archives:
+            _load_stops(connection, archive)
+        for archive in archives:
+            _load_trips(connection, archive)
+            _load_stop_times(connection, archive)
         connection.execute(
             "CREATE INDEX stop_times_trip_sequence "
             "ON stop_times (trip_id, stop_sequence)"
@@ -352,9 +363,18 @@ def _load_stops(connection: sqlite3.Connection, archive: zipfile.ZipFile) -> Non
 
 
 def _load_trips(connection: sqlite3.Connection, archive: zipfile.ZipFile) -> None:
+    connection.executescript(
+        """
+        DROP TABLE IF EXISTS archive_trips;
+        CREATE TEMP TABLE archive_trips (
+            trip_id TEXT PRIMARY KEY, service_id TEXT, route_id TEXT,
+            trip_headsign TEXT, direction_id TEXT, vehicle_category_id TEXT
+        );
+        """
+    )
     _batched_insert(
         connection,
-        "INSERT OR REPLACE INTO trips VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO archive_trips VALUES (?, ?, ?, ?, ?, ?)",
         (
             (
                 row.get("trip_id") or "",
@@ -368,6 +388,13 @@ def _load_trips(connection: sqlite3.Connection, archive: zipfile.ZipFile) -> Non
             if row.get("trip_id")
         ),
     )
+    # Each upstream archive is a complete authority for the trips it declares.
+    # Remove an earlier archive's stop timeline before the later trip metadata and
+    # stop times are installed, so collision handling is truly last-wins.
+    connection.execute(
+        "DELETE FROM stop_times WHERE trip_id IN (SELECT trip_id FROM archive_trips)"
+    )
+    connection.execute("INSERT OR REPLACE INTO trips SELECT * FROM archive_trips")
 
 
 def _load_stop_times(connection: sqlite3.Connection, archive: zipfile.ZipFile) -> None:

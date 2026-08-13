@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from hermes_sydney_transport import __version__
+from hermes_sydney_transport.presentation.catalog import TOOL_SPECS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,9 +19,9 @@ class PackagingTests(unittest.TestCase):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
         self.assertIn("name: sydney-transport", manifest)
-        self.assertIn('version: "0.5.0"', manifest)
+        self.assertIn('version: "0.6.0"', manifest)
         self.assertEqual(project["project"]["name"], "hermes-sydney-transport")
-        self.assertEqual(project["project"]["version"], "0.5.0")
+        self.assertEqual(project["project"]["version"], "0.6.0")
         self.assertEqual(__version__, project["project"]["version"])
         self.assertEqual(
             project["project"]["dependencies"],
@@ -32,6 +33,21 @@ class PackagingTests(unittest.TestCase):
             ],
             "hermes_sydney_transport",
         )
+
+    def test_manifest_provides_tools_match_catalog_exactly(self):
+        manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8").splitlines()
+        provided: list[str] = []
+        in_tools = False
+        for line in manifest:
+            if line == "provides_tools:":
+                in_tools = True
+                continue
+            if in_tools and (not line.startswith("  - ") and line.strip()):
+                break
+            if in_tools and line.startswith("  - "):
+                provided.append(line.removeprefix("  - ").strip())
+
+        self.assertEqual(provided, [spec.name for spec in TOOL_SPECS])
 
     def test_root_directory_shim_loads_like_hermes_namespace_package(self):
         parent = types.ModuleType("hermes_plugins")

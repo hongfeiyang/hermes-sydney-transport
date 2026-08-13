@@ -24,7 +24,7 @@ def departure_from_candidate(candidate: DepartureCandidate) -> Departure:
         if delay < -2
         else "on_time"
     )
-    if candidate.mode not in {"train", "bus"}:
+    if candidate.mode not in {"train", "bus", "metro", "light_rail", "ferry"}:
         raise ValueError("departure candidate has unsupported mode")
     return Departure(
         mode=cast(TransitMode, candidate.mode),
@@ -54,7 +54,9 @@ def journey_from_candidate(candidate: JourneyCandidate) -> Journey:
         if all(leg.duration_seconds is not None for leg in active)
         else None
     )
-    train_legs = sum(leg.mode == "train" for leg in legs)
+    transit_legs = sum(
+        leg.mode in {"train", "bus", "metro", "light_rail", "ferry"} for leg in legs
+    )
     first_origin = legs[0].origin
     last_destination = legs[-1].destination
     return Journey(
@@ -67,7 +69,7 @@ def journey_from_candidate(candidate: JourneyCandidate) -> Journey:
         interchanges=(
             candidate.declared_interchanges
             if candidate.declared_interchanges is not None
-            else max(train_legs - 1, 0)
+            else max(transit_legs - 1, 0)
         ),
         realtime_available=_combine_optional_flags(
             leg.is_realtime_controlled for leg in legs

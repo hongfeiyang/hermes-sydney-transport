@@ -72,9 +72,12 @@ class Station(PluginOutput):
     coordinates: Coordinates | None
 
 
+PublicTransitMode = Literal["train", "bus", "metro", "light_rail", "ferry"]
+
+
 class StationSearchResult(ResultMetadata):
     query: str
-    requested_modes: list[Literal["train", "bus"]]
+    requested_modes: list[PublicTransitMode]
     stations: list[Station]
     count: int = Field(ge=0)
 
@@ -129,7 +132,7 @@ class Route(PluginOutput):
 
 
 class Departure(PluginOutput):
-    mode: Literal["train", "bus"]
+    mode: PublicTransitMode
     planned_time: Timestamp | None
     estimated_time: Timestamp | None
     status: Literal["cancelled", "unknown", "delayed", "early", "on_time"]
@@ -147,7 +150,7 @@ class Departure(PluginOutput):
 
 class DeparturesResult(ResultMetadata):
     stop_id: str
-    requested_modes: list[Literal["train", "bus"]]
+    requested_modes: list[PublicTransitMode]
     station: Station | None
     requested_at: Timestamp
     departures: list[Departure]
@@ -236,7 +239,7 @@ class TripPlanResult(ResultMetadata):
     requested_at: Timestamp
     time_mode: Literal["depart", "arrive"]
     wheelchair_requested: bool
-    requested_modes: list[Literal["train", "bus"]]
+    requested_modes: list[PublicTransitMode]
     journeys: list[Journey]
     count: int = Field(ge=0)
     system_messages: list[SystemMessage]
@@ -295,7 +298,7 @@ class AlertScope(PluginOutput):
 
 class AlertsResult(ResultMetadata):
     scope: AlertScope
-    requested_modes: list[Literal["train", "bus"]]
+    requested_modes: list[PublicTransitMode]
     alerts: list[Alert]
     count: int = Field(ge=0)
     remote_content_is_untrusted: Literal[True]
@@ -307,8 +310,11 @@ class AlertsResult(ResultMetadata):
         return self
 
 
+RealtimeMode = Literal["train", "bus", "metro", "light_rail", "ferry"]
+
+
 class RealtimeQuery(PluginOutput):
-    mode: Literal["train", "bus"]
+    mode: RealtimeMode
     requested_service_id: str | None
     trip_code: str | None
     stop_id: str | None
@@ -334,7 +340,7 @@ class RealtimeDataQuality(PluginOutput):
 
 
 class ServiceDescription(PluginOutput):
-    mode: Literal["train", "bus"]
+    mode: RealtimeMode
     service_id: str
     route_id: str | None
     agency_id: str | None

@@ -8,12 +8,14 @@ from types import MappingProxyType
 from typing import Any
 
 from ...models.errors import DomainError
+from ...ports.alerts import AlertRecord, AlertSelector, AlertTimeRange
 from ...ports.realtime import (
     CarriageRecord,
     GtfsTime,
     StopEvent,
     StopRelationship,
     TrackDirection,
+    TransportMode,
     TripRelationship,
     TripStopUpdate,
     TripUpdateRecord,
@@ -35,6 +37,11 @@ class ProtobufRealtimeDecoder:
 
     def vehicle_positions(self, raw: bytes) -> VehiclePositionsFeed:
         return decode_vehicle_positions(raw)
+
+    def alerts(
+        self, raw: bytes, mode: TransportMode, source_feed: str | None = None
+    ) -> tuple[AlertRecord, ...]:
+        return decode_alerts(raw, mode, source_feed)
 
 
 @lru_cache(maxsize=1)
@@ -126,6 +133,79 @@ def decode_vehicle_positions(raw: bytes) -> VehiclePositionsFeed:
         feed_timestamp=_feed_timestamp(feed),
         vehicles=MappingProxyType(vehicles),
     )
+
+
+def decode_alerts(
+    raw: bytes, mode: TransportMode, source_feed: str | None = None
+) -> tuple[AlertRecord, ...]:
+    pb = _binding()
+    feed = _parse_feed(raw, pb)
+    feed_name = source_feed or mode.value
+    records: list[AlertRecord] = []
+    for entity in feed.entity:
+        if not entity.HasField("alert"):
+            continue
+        alert = entity.alert
+        selectors = tuple(_alert_selector(item) for item in alert.informed_entity)
+        route_ids = tuple(
+            sorted(
+                {
+                    selector.route_id
+                    for selector in selectors
+                    if selector.route_id is not None
+                }
+            )
+        )
+        stop_ids = tuple(
+            sorted(
+                {
+                    selector.stop_id
+                    for selector in selectors
+                    if selector.stop_id is not None
+                }
+            )
+        )
+        trip_ids = tuple(
+            sorted(
+                {
+                    selector.trip_id
+                    for selector in selectors
+                    if selector.trip_id is not None
+                }
+            )
+        )
+        title = _translated_text(alert, "header_text")
+        description = _translated_text(alert, "description_text")
+        records.append(
+            AlertRecord(
+                id=str(entity.id).strip() or title or description or "unknown-alert",
+                mode=mode,
+                source_feed=feed_name,
+                title=title or description or "Service disruption",
+                description=description,
+                cause=_enum_name(alert.Cause, alert.cause, "unknown_cause")
+                or "unknown_cause",
+                effect=_enum_name(alert.Effect, alert.effect, "unknown_effect")
+                or "unknown_effect",
+                severity=(
+                    _enum_name(
+                        alert.SeverityLevel,
+                        alert.severity_level,
+                        "unknown_severity",
+                    )
+                    if alert.HasField("severity_level")
+                    else "unknown_severity"
+                )
+                or "unknown_severity",
+                url=_translated_text(alert, "url") or None,
+                active_periods=tuple(_time_range(item) for item in alert.active_period),
+                selectors=selectors,
+                route_ids=route_ids,
+                stop_ids=stop_ids,
+                trip_ids=trip_ids,
+            )
+        )
+    return tuple(records)
 
 
 def _trip_stop(stop: Any, pb: Any) -> TripStopUpdate:
@@ -352,6 +432,36 @@ def _track_direction(value: int, pb: Any) -> TrackDirection:
         return TrackDirection(name or "unknown")
     except ValueError:
         return TrackDirection.UNKNOWN
+
+
+def _time_range(item: Any) -> AlertTimeRange:
+    return AlertTimeRange(
+        start=_optional_timestamp(item, "start"),
+        end=_optional_timestamp(item, "end"),
+    )
+
+
+def _alert_selector(item: Any) -> AlertSelector:
+    trip = item.trip if item.HasField("trip") else None
+    return AlertSelector(
+        agency_id=_optional_text(item, "agency_id"),
+        route_id=_optional_text(item, "route_id"),
+        route_type=_optional_scalar(item, "route_type"),
+        stop_id=_optional_text(item, "stop_id"),
+        trip_id=_optional_text(trip, "trip_id") if trip is not None else None,
+        direction_id=_optional_scalar(item, "direction_id"),
+    )
+
+
+def _translated_text(message: Any, field: str) -> str:
+    if not message.HasField(field):
+        return ""
+    translated = getattr(message, field)
+    for item in translated.translation:
+        text = str(item.text).strip()
+        if text:
+            return text
+    return ""
 
 
 def _enum_name(enum_type: Any, value: int, default: str | None) -> str | None:

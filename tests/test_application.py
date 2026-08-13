@@ -9,15 +9,19 @@ from hermes_sydney_transport.application.trip_planner import (
     GetDepartures,
     SearchStops,
 )
+from hermes_sydney_transport.application.trip_planner_policy import (
+    journey_from_candidate,
+)
 from hermes_sydney_transport.models.inputs import (
     AlertsInput,
     DeparturesInput,
     StationSearchInput,
 )
-from hermes_sydney_transport.models.outputs import Alert, Route, Station
+from hermes_sydney_transport.models.outputs import Alert, Route, Station, TripLeg
 from hermes_sydney_transport.ports.trip_planner import (
     DepartureBoard,
     DepartureCandidate,
+    JourneyCandidate,
 )
 
 
@@ -87,6 +91,22 @@ class TripPlannerApplicationTests(unittest.TestCase):
         self.assertEqual([item.id for item in result.alerts], ["other", "same"])
         self.assertEqual(result.alerts[1].title, "New")
 
+    def test_journey_interchanges_count_every_supported_transit_mode(self):
+        candidate = JourneyCandidate(
+            legs=(
+                _leg("metro"),
+                _leg("walk"),
+                _leg("light_rail"),
+                _leg("ferry"),
+            ),
+            declared_interchanges=None,
+            rating=None,
+        )
+
+        result = journey_from_candidate(candidate)
+
+        self.assertEqual(result.interchanges, 2)
+
 
 def _station(
     station_id: str, name: str, modes: list[int], quality: int, best: bool
@@ -144,6 +164,48 @@ def _alert(alert_id, version, priority, title):
         source_name=None,
         url=None,
         url_text="",
+    )
+
+
+def _leg(mode: str) -> TripLeg:
+    stop = {
+        "id": None,
+        "name": None,
+        "short_name": None,
+        "parent_id": None,
+        "platform": None,
+        "departure_time_planned": None,
+        "departure_time_estimated": None,
+        "arrival_time_planned": None,
+        "arrival_time_estimated": None,
+        "wheelchair_accessible": None,
+        "coordinates": None,
+    }
+    return TripLeg.model_validate(
+        {
+            "mode": mode,
+            "duration_seconds": 60,
+            "duration_minutes": 1,
+            "distance_metres": None,
+            "is_realtime_controlled": None,
+            "realtime_status": None,
+            "cancelled": None,
+            "origin": stop,
+            "destination": stop,
+            "route": {
+                "id": None,
+                "number": None,
+                "name": None,
+                "description": None,
+                "product_class": None,
+            },
+            "operator": None,
+            "service_destination": None,
+            "stop_count": 0,
+            "stops": [],
+            "alert_ids": [],
+            "hints": [],
+        }
     )
 
 

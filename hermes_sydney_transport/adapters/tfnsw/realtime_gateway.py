@@ -11,9 +11,12 @@ from typing import Protocol
 from ...models.errors import DomainError
 from ...ports.realtime import (
     ServiceRealtimeSnapshot,
+    TripUpdateRecord,
     TripUpdatesFeed,
+    UpdateBundle,
     VehiclePositionsFeed,
     VehicleRealtimeSnapshot,
+    VehicleRecord,
 )
 from .binary_transport import BinaryTransport
 
@@ -91,14 +94,17 @@ class TfnswRealtimeRepository:
             if self._trip_cache and now < self._trip_cache[0]:
                 self._trip_cache_hits += 1
                 return self._trip_cache[1]
-            response = self._transport.get("trip_updates")
-            if response.data is None:
-                raise DomainError(
-                    "invalid_realtime_feed",
-                    "TfNSW Trip Updates response did not contain a feed.",
-                )
-            feed = self._decoder.trip_updates(response.data)
-            self._trip_fetches += 1
+            responses = self._transport.get_all("trip_updates")
+            feeds = []
+            for response in responses:
+                if response.data is None:
+                    raise DomainError(
+                        "invalid_realtime_feed",
+                        "TfNSW Trip Updates response did not contain a feed.",
+                    )
+                feeds.append(self._decoder.trip_updates(response.data))
+            feed = _merge_trip_updates(tuple(feeds))
+            self._trip_fetches += len(responses)
             self._trip_cache = (now + self._cache_seconds, feed)
             return feed
 
@@ -108,13 +114,56 @@ class TfnswRealtimeRepository:
             if self._vehicle_cache and now < self._vehicle_cache[0]:
                 self._vehicle_cache_hits += 1
                 return self._vehicle_cache[1]
-            response = self._transport.get("vehicle_positions")
-            if response.data is None:
-                raise DomainError(
-                    "invalid_realtime_feed",
-                    "TfNSW Vehicle Positions response did not contain a feed.",
-                )
-            feed = self._decoder.vehicle_positions(response.data)
-            self._vehicle_fetches += 1
+            responses = self._transport.get_all("vehicle_positions")
+            feeds = []
+            for response in responses:
+                if response.data is None:
+                    raise DomainError(
+                        "invalid_realtime_feed",
+                        "TfNSW Vehicle Positions response did not contain a feed.",
+                    )
+                feeds.append(self._decoder.vehicle_positions(response.data))
+            feed = _merge_vehicle_positions(tuple(feeds))
+            self._vehicle_fetches += len(responses)
             self._vehicle_cache = (now + self._cache_seconds, feed)
             return feed
+
+
+def _merge_trip_updates(feeds: tuple[TripUpdatesFeed, ...]) -> TripUpdatesFeed:
+    if not feeds:
+        raise DomainError(
+            "invalid_realtime_feed",
+            "TfNSW Trip Updates did not return any upstream feed.",
+        )
+    feed_timestamp = max(feed.feed_timestamp for feed in feeds)
+    updates: dict[str, TripUpdateRecord] = {}
+    bundles: list[UpdateBundle] = []
+    for feed in feeds:
+        for service_id, update in feed.updates.items():
+            # Earlier upstream feeds in the allowlisted registry keep precedence when
+            # a service ID appears more than once.
+            updates.setdefault(service_id, update)
+        bundles.extend(feed.update_bundles)
+    return TripUpdatesFeed(
+        feed_timestamp=feed_timestamp,
+        updates=updates,
+        update_bundles=tuple(bundles),
+    )
+
+
+def _merge_vehicle_positions(
+    feeds: tuple[VehiclePositionsFeed, ...],
+) -> VehiclePositionsFeed:
+    if not feeds:
+        raise DomainError(
+            "invalid_realtime_feed",
+            "TfNSW Vehicle Positions did not return any upstream feed.",
+        )
+    feed_timestamp = max(feed.feed_timestamp for feed in feeds)
+    vehicles: dict[str, VehicleRecord] = {}
+    for feed in feeds:
+        for service_id, vehicle in feed.vehicles.items():
+            # Earlier upstream feeds in the allowlisted registry keep precedence when
+            # a service ID appears more than once.
+            vehicles.setdefault(service_id, vehicle)
+    return VehiclePositionsFeed(feed_timestamp=feed_timestamp, vehicles=vehicles)

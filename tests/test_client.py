@@ -497,6 +497,42 @@ class TfnswClientTests(unittest.TestCase):
         self.assertIn("exclMOT_1", params)
         self.assertNotIn("exclMOT_5", params)
 
+    def test_departures_can_select_metro_and_keep_other_modes_excluded(self):
+        transport = FakeTransport(
+            {
+                "/departure_mon": {
+                    "stopEvents": [
+                        {
+                            "departureTimePlanned": "2026-08-12T10:00:00+10:00",
+                            "properties": {"RealtimeTripId": "metro-service-1"},
+                            "transportation": {
+                                "number": "M1",
+                                "product": {"class": 2},
+                                "destination": {"name": "Tallawong"},
+                            },
+                        },
+                        {
+                            "departureTimePlanned": "2026-08-12T10:03:00+10:00",
+                            "transportation": {
+                                "number": "T1",
+                                "product": {"class": 1},
+                            },
+                        },
+                    ]
+                }
+            }
+        )
+        client = TfnswClient("test-key", transport=transport, now=self._now)
+
+        result = client.departures("200060", modes=["metro"])
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["departures"][0]["mode"], "metro")
+        params = dict(transport.calls[0][1])
+        self.assertNotIn("exclMOT_2", params)
+        self.assertIn("exclMOT_1", params)
+        self.assertIn("exclMOT_5", params)
+
     def test_resolves_trip_code_to_exact_realtime_service_id(self):
         transport = FakeTransport(
             {

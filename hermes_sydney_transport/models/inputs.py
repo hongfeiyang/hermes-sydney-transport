@@ -65,7 +65,7 @@ TripCode = Annotated[
     StringConstraints(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._:-]+$"),
     BeforeValidator(_collapse_whitespace),
 ]
-TransitMode = Literal["train", "bus"]
+TransitMode = Literal["train", "bus", "metro", "light_rail", "ferry"]
 
 
 def _default_modes() -> list[TransitMode]:
@@ -139,8 +139,11 @@ class ModeInput(PluginInput):
     modes: list[TransitMode] = Field(
         default_factory=_default_modes,
         min_length=1,
-        max_length=2,
-        description="Transport modes to include. Supported values are train and bus.",
+        max_length=5,
+        description=(
+            "Transport modes to include. Supported values are train, bus, metro, "
+            "light_rail, and ferry. Defaults to train and bus for backward compatibility."
+        ),
     )
 
     @field_validator("modes")
@@ -294,3 +297,27 @@ class BusServiceStatusInput(RealtimeServiceInput):
 
 class BusVehiclePositionInput(RealtimeServiceInput):
     """Resolve one bus and return its latest reported physical position."""
+
+
+class MetroServiceStatusInput(RealtimeServiceInput):
+    """Resolve one metro service and return its current stop-by-stop service state."""
+
+
+class MetroVehiclePositionInput(RealtimeServiceInput):
+    """Resolve one metro service and return its latest reported physical position."""
+
+
+class LightRailServiceStatusInput(RealtimeServiceInput):
+    """Resolve one light rail service and return its current stop-by-stop service state."""
+
+
+class LightRailVehiclePositionInput(RealtimeServiceInput):
+    """Resolve one light rail service and return its latest reported physical position."""
+
+
+class FerryServiceStatusInput(RealtimeServiceInput):
+    """Resolve one ferry service and return its current stop-by-stop service state."""
+
+
+class FerryVehiclePositionInput(RealtimeServiceInput):
+    """Resolve one ferry service and return its latest reported physical position."""
