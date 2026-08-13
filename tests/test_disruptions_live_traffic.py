@@ -218,7 +218,7 @@ class LiveTrafficTests(unittest.TestCase):
                 "features": [
                     {
                         "type": "Feature",
-                        "id": 12,
+                        "id": 12.5,
                         "geometry": {
                             "type": "Point",
                             "coordinates": [151.0, -33.8],
@@ -257,6 +257,7 @@ class LiveTrafficTests(unittest.TestCase):
         )
 
         self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].id, "12.5")
         self.assertEqual(len(result[0].roads), 3)
 
     def test_live_traffic_use_case_returns_quality_note_and_count(self):

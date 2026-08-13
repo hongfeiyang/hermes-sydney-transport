@@ -10,6 +10,7 @@ ShortText = Annotated[str, Field(strict=True, max_length=500)]
 LongText = Annotated[str, Field(strict=True, max_length=8_192)]
 UrlText = Annotated[str, Field(strict=True, max_length=2_048)]
 EpochMillis = Annotated[int, Field(strict=True, ge=0, le=4_102_444_800_000)]
+HazardId = StrictInt | Annotated[float, Field(strict=True, allow_inf_nan=False)]
 
 
 class WireModel(BaseModel):
@@ -67,7 +68,7 @@ class GeometryWire(WireModel):
 
 class FeatureWire(WireModel):
     type: Literal["Feature"]
-    id: StrictInt
+    id: HazardId
     geometry: GeometryWire
     properties: HazardPropertiesWire
 
