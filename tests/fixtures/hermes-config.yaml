@@ -1,0 +1,5 @@
+# Used only by the isolated Hermes loader smoke test. It contains no credentials.
+_config_version: 33
+plugins:
+  enabled:
+    - sydney-transport

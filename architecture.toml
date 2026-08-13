@@ -1,0 +1,75 @@
+version = 1
+package = "hermes_sydney_transport"
+
+[repository]
+forbidden_paths = ["hermes_sydney_trains"]
+
+[principles]
+style = "ports-and-adapters data pipeline"
+direction = "presentation -> application -> ports <- adapters"
+canonical_contracts = "Pydantic request/result models"
+
+[root_modules]
+allowed = ["__init__"]
+
+[extension]
+# One audited registration call site; ToolSpec drives schemas and handlers.
+registration_callers = ["bootstrap/registration.py"]
+raw_sql_layers = ["adapters"]
+tool_spec_callers = ["presentation/catalog.py"]
+schema_generation_callers = ["presentation/spec.py"]
+handler_factory_callers = ["bootstrap/registration.py"]
+forbid_any_layers = ["ports", "application"]
+forbid_typed_dict_layers = ["ports", "application"]
+forbid_legacy_generic_syntax = true
+require_dataclass_records_layers = ["ports"]
+forbid_time_parsing_layers = ["application"]
+infrastructure_literal_layers = ["adapters"]
+infrastructure_literals = ["trip_updates", "vehicle_positions", "static_schedule"]
+forbid_nested_loops_paths = ["application/realtime"]
+
+[limits]
+application_max_lines = 250
+application_max_complexity = 12
+
+[layers.contracts]
+paths = ["models"]
+may_import = ["contracts"]
+forbidden_capabilities = ["environment", "hermes", "network", "protobuf", "filesystem"]
+
+[layers.ports]
+paths = ["ports"]
+may_import = ["contracts", "ports"]
+forbidden_capabilities = ["environment", "hermes", "network", "protobuf", "filesystem"]
+
+[layers.application]
+paths = ["application"]
+may_import = ["contracts", "ports", "application"]
+forbidden_capabilities = ["environment", "hermes", "network", "protobuf", "filesystem"]
+
+[layers.adapters]
+paths = ["adapters"]
+may_import = ["contracts", "ports", "adapters", "generated"]
+forbidden_capabilities = ["hermes"]
+
+[layers.presentation]
+paths = ["presentation"]
+may_import = ["contracts", "application", "presentation"]
+forbidden_capabilities = ["environment", "network", "protobuf", "filesystem"]
+
+[layers.bootstrap]
+paths = ["bootstrap"]
+may_import = ["contracts", "ports", "application", "adapters", "presentation", "bootstrap", "generated"]
+forbidden_capabilities = []
+
+[layers.generated]
+paths = ["proto"]
+may_import = ["generated"]
+forbidden_capabilities = ["environment", "hermes", "network", "filesystem"]
+
+[capabilities]
+environment = ["os"]
+filesystem = ["pathlib", "shutil", "tempfile", "zipfile"]
+hermes = ["hermes_cli", "tools"]
+network = ["http", "requests", "urllib"]
+protobuf = ["google.protobuf"]

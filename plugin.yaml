@@ -1,0 +1,25 @@
+manifest_version: 1
+name: sydney-transport
+version: "0.5.0"
+description: Plan Sydney train and bus travel, track services, and query NSW road traffic counts using official TfNSW data.
+author: Hermes Sydney Transport contributors
+kind: standalone
+requires_env:
+  - name: TFNSW_API_KEY
+    description: Transport for NSW Open Data API key
+    url: https://opendata.transport.nsw.gov.au/
+    secret: true
+provides_tools:
+  - sydney_transport_search_stops
+  - sydney_transport_nearby_stops
+  - sydney_transport_departures
+  - sydney_transport_plan_trip
+  - sydney_transport_alerts
+  - sydney_transport_train_service_status
+  - sydney_transport_train_vehicle_position
+  - sydney_transport_bus_service_status
+  - sydney_transport_bus_vehicle_position
+  - nsw_traffic_count_stations
+  - nsw_traffic_volume_summary
+  - nsw_traffic_volume_hourly
+provides_hooks: []

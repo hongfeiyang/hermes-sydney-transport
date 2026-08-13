@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77,<85"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-sydney-transport"
+version = "0.5.0"
+description = "A Hermes Agent plugin for Sydney train and bus travel plus NSW road traffic counts"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = "MIT"
+authors = [{ name = "Hermes Sydney Transport contributors" }]
+keywords = ["hermes-agent", "sydney-transport", "tfnsw", "train", "bus", "traffic"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = ["pydantic>=2.9,<3", "protobuf>=6.31,<8"]
+
+[project.optional-dependencies]
+codegen = ["grpcio-tools==1.73.1", "protobuf>=6.31,<7"]
+dev = ["mypy>=1.15,<2", "ruff>=0.11,<1"]
+
+[project.entry-points."hermes_agent.plugins"]
+sydney-transport = "hermes_sydney_transport"
+
+[tool.setuptools.packages.find]
+include = ["hermes_sydney_transport*"]
+
+[tool.setuptools.package-data]
+hermes_sydney_transport = ["proto/*.proto", "py.typed"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+warn_unused_ignores = true
+show_error_codes = true
+pretty = true
+explicit_package_bases = true
+exclude = ["hermes_sydney_transport/proto/tfnsw_gtfs_realtime_pb2.py"]
+
+[[tool.mypy.overrides]]
+module = "hermes_sydney_transport.proto.tfnsw_gtfs_realtime_pb2"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["N999"]
+"hermes_sydney_transport/proto/*_pb2.py" = ["ALL"]
