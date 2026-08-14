@@ -11,11 +11,10 @@ from .base import (
     NullableFloat,
     NullableInt,
     NullableText,
-    NullableTimestamp,
     ShortText,
     WireModel,
-    WireTimestamp,
 )
+from .timestamps import NullableTimestamp, WireTimestamp
 
 
 class FieldDescriptionWire(WireModel):

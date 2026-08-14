@@ -11,13 +11,13 @@ from .base import (
     Latitude,
     Longitude,
     LongText,
-    OptionalEpochMillis,
     OptionalNonNegativeNumber,
     OptionalPositiveInt,
     ShortText,
     UrlText,
     WireModel,
 )
+from .timestamps import OptionalProviderTimestamp
 
 HazardId = StrictInt | FiniteNumber
 
@@ -65,9 +65,9 @@ class HazardPropertiesWire(WireModel):
         default=None, alias="expectedDelay"
     )
     speed_limit_kmh: OptionalPositiveInt = Field(default=None, alias="speedLimit")
-    updated_at: OptionalEpochMillis = Field(default=None, alias="lastUpdated")
-    start_at: OptionalEpochMillis = Field(default=None, alias="start")
-    end_at: OptionalEpochMillis = Field(default=None, alias="end")
+    updated_at: OptionalProviderTimestamp = Field(default=None, alias="lastUpdated")
+    start_at: OptionalProviderTimestamp = Field(default=None, alias="start")
+    end_at: OptionalProviderTimestamp = Field(default=None, alias="end")
     roads: tuple[RoadWire, ...] = Field(default_factory=tuple, max_length=100)
     web_links: tuple[WebLinkWire, ...] = Field(
         default_factory=tuple, alias="webLinks", max_length=50
@@ -90,5 +90,7 @@ class FeatureCollectionWire(WireModel):
     type: Literal["FeatureCollection"]
     rights: RightsWire | None = None
     layer_name: ShortText = Field(alias="layerName")
-    last_published: OptionalEpochMillis = Field(default=None, alias="lastPublished")
+    last_published: OptionalProviderTimestamp = Field(
+        default=None, alias="lastPublished"
+    )
     features: Annotated[tuple[FeatureWire, ...], Field(max_length=2_000)]

@@ -56,6 +56,7 @@ forbid_application_dict_projection = true
 forbid_any_roles = ["catalogs", "platform", "wire", "mappers", "stores", "repositories"]
 require_pydantic_wire_models = true
 wire_model_roots = ["WireModel"]
+wire_timestamp_paths = ["adapters/tfnsw/wire/timestamps.py"]
 forbid_manual_parsing_roles = ["repositories", "mappers"]
 
 [adapter_roles.catalogs]

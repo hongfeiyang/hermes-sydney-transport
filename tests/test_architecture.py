@@ -198,6 +198,15 @@ class ArchitectureContractTests(unittest.TestCase):
                 "class ManualPayload:\n    value: dict\n",
                 encoding="utf-8",
             )
+            (adapter_root / "wire" / "manual_timestamp.py").write_text(
+                "from datetime import datetime\n"
+                "from typing import Annotated\n"
+                "from pydantic import BeforeValidator\n"
+                "def parse(value: str) -> datetime:\n"
+                "    return datetime.fromisoformat(value)\n"
+                "Timestamp = Annotated[datetime, BeforeValidator(parse)]\n",
+                encoding="utf-8",
+            )
             nested_wire = adapter_root / "wire" / "nested"
             nested_wire.mkdir()
             (nested_wire / "direct_base.py").write_text(
@@ -234,6 +243,7 @@ class ArchitectureContractTests(unittest.TestCase):
 
         self.assertIn("explicit-adapter-types", rules)
         self.assertIn("pydantic-wire-contract", rules)
+        self.assertIn("single-wire-timestamp-contract", rules)
         self.assertIn("declarative-adapter-parsing", rules)
         self.assertIn("single-html-codec", rules)
         self.assertIn(

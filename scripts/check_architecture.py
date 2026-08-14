@@ -51,6 +51,7 @@ class ArchitectureChecker:
             self._check_adapter_role_dependencies,
             self._check_adapter_explicit_types,
             self._check_wire_model_shape,
+            self._check_wire_timestamp_ownership,
             self._check_adapter_boundary_imports,
             self._check_manual_adapter_parsing,
             self._check_exception_boundaries,
@@ -660,6 +661,65 @@ class ArchitectureChecker:
             for name, (path, node, _) in declarations.items()
             if not is_shared_wire(name)
         ]
+
+    def _check_wire_timestamp_ownership(self) -> list[Violation]:
+        """Keep provider timestamp coercion behind one shared Pydantic contract."""
+
+        configured = self.policy.get("adapter_contract", {})
+        allowed = tuple(configured.get("wire_timestamp_paths", []))
+        if not allowed:
+            return []
+        wire_root = self.package / configured["root"] / "wire"
+        parsing_methods = {"fromisoformat", "fromtimestamp", "strptime"}
+        parser_modules = {"arrow", "dateutil", "pendulum"}
+        violations: list[Violation] = []
+        for path in sorted(wire_root.rglob("*.py")):
+            relative = path.relative_to(self.package).as_posix()
+            if self._path_matches(relative, allowed):
+                continue
+            tree = self._tree(path)
+            forbidden_imports = {
+                imported
+                for imported in self._external_imports(path)
+                if imported.split(".", 1)[0] in parser_modules
+            }
+            if forbidden_imports:
+                violations.append(
+                    Violation(
+                        str(path.relative_to(self.root)),
+                        "single-wire-timestamp-contract",
+                        "wire timestamp parsing belongs only in the configured "
+                        f"timestamp contract: {sorted(forbidden_imports)}",
+                    )
+                )
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                called = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else None
+                )
+                timestamp_adapter = (
+                    called == "TypeAdapter"
+                    and bool(node.args)
+                    and any(
+                        name in ast.unparse(node.args[0])
+                        for name in ("datetime", "AwareDatetime")
+                    )
+                )
+                if called in parsing_methods or timestamp_adapter:
+                    violations.append(
+                        Violation(
+                            f"{path.relative_to(self.root)}:{node.lineno}",
+                            "single-wire-timestamp-contract",
+                            "wire models declare shared timestamp types; timestamp "
+                            "normalization belongs only in wire/timestamps.py",
+                        )
+                    )
+        return violations
 
     def _check_adapter_boundary_imports(self) -> list[Violation]:
         configured = self.policy.get("adapter_contract", {})

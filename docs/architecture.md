@@ -133,7 +133,9 @@ The directory roles and imports are machine-readable in `architecture.toml`:
 - `platform/` owns the sole persistent HTTP client, auth, retry, redirect, deadline,
   content-type, conditional-request, and response-size policy;
 - `codecs/` is the only parsing boundary for JSON, protobuf, CSV, ZIP, and XLSX/XML;
-- `wire/` owns strict frozen Pydantic models with upstream aliases and bounds;
+- `wire/` owns strict frozen Pydantic models with upstream aliases and bounds; all
+  provider date-time coercion is declared through the single timezone-aware contract
+  in `wire/timestamps.py`;
 - `mappers/` owns small pure wire-to-canonical transformations and filters;
 - `stores/` owns atomic files, SQLite indexes, freshness, and rollback;
 - `repositories/` composes the preceding roles and implements semantic ports.
@@ -144,6 +146,8 @@ codec, or store boundaries. They also cannot decode bytes, split line-oriented t
 instantiate HTML parsers, parse timestamp strings, or validate dictionary projections.
 Raw mappings do not pass from codecs into repositories. Public `wire/` records in any
 nested wire module must inherit from the shared frozen `WireModel` family.
+Wire modules may declare shared timestamp types but cannot instantiate another datetime
+adapter or parser; the architecture checker rejects parallel timestamp contracts.
 Dynamic `Any` values are confined to protobuf codecs; catalogs, platform, wire,
 mappers, stores, and repositories are explicitly typed.
 

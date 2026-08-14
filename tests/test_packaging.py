@@ -19,9 +19,9 @@ class PackagingTests(unittest.TestCase):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
         self.assertIn("name: sydney-transport", manifest)
-        self.assertIn('version: "0.7.1"', manifest)
+        self.assertIn('version: "0.7.2"', manifest)
         self.assertEqual(project["project"]["name"], "hermes-sydney-transport")
-        self.assertEqual(project["project"]["version"], "0.7.1")
+        self.assertEqual(project["project"]["version"], "0.7.2")
         self.assertEqual(__version__, project["project"]["version"])
         self.assertEqual(
             project["project"]["dependencies"],

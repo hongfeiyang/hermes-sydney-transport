@@ -13,9 +13,9 @@ from .base import (
     NullableInt,
     NullableNonNegativeInt,
     NullableText,
-    NullableTimestamp,
     WireModel,
 )
+from .timestamps import NullableTimestamp
 
 LaxInt = Annotated[int, Field(strict=False)]
 

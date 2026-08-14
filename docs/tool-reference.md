@@ -1,6 +1,6 @@
 # Tool reference
 
-This page describes the model-visible contract of Hermes Sydney Transport 0.7.1.
+This page describes the model-visible contract of Hermes Sydney Transport 0.7.2.
 The executable JSON Schemas are generated from strict Pydantic models; this document
 is a human-readable guide, not a second source of truth.
 

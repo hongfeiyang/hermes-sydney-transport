@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field, model_validator
 
 from .base import ClosedWireModel, WireModel
+from .timestamps import NullableTimestamp
 
 
 def _text(value: object) -> str | None:
@@ -34,13 +35,6 @@ def _bool(value: object) -> bool | None:
     return value == "True"
 
 
-def _timestamp(value: object) -> datetime | None:
-    text = _text(value)
-    if text is None:
-        return None
-    return datetime.strptime(text, "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=UTC)
-
-
 OptionalText = Annotated[
     Annotated[str, Field(max_length=8_192)] | None, BeforeValidator(_text)
 ]
@@ -49,7 +43,6 @@ RequiredText = Annotated[
 ]
 OptionalFloat = Annotated[float | None, BeforeValidator(_float)]
 OptionalBool = Annotated[bool | None, BeforeValidator(_bool)]
-OptionalTimestamp = Annotated[datetime | None, BeforeValidator(_timestamp)]
 
 
 class FacilityCsvRow(WireModel):
@@ -76,7 +69,7 @@ class FacilityCsvRow(WireModel):
 
 class LiftSheetRow(WireModel):
     tsn: OptionalText = None
-    record_updated_at: OptionalTimestamp = Field(default=None, alias="_updated_at")
+    record_updated_at: NullableTimestamp = Field(default=None, alias="_updated_at")
     functional_location_code: OptionalText = Field(
         default=None, alias="sydney_trains__lift_functional_location_code"
     )

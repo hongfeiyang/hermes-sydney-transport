@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.2 - 2026-08-14
+
+- Replaced version-sensitive `strict=False` datetime coercion with one shared,
+  declarative Pydantic wire timestamp contract.
+- Model the two official Live Traffic time representations explicitly: bounded epoch
+  milliseconds or timezone-aware ISO 8601 text.
+- Reject naive timestamps, date-only strings, numeric strings, floats, booleans and
+  out-of-range epochs through the canonical codec error path.
+- Added an architecture gate that prevents timestamp parsing from being reintroduced
+  outside `wire/timestamps.py`, plus cross-provider timestamp contract tests.
+- Verified the complete 120-test suite against both minimum Pydantic 2.9 and the current
+  supported dependency set.
+
 ## 0.7.1 - 2026-08-14
 
 - Accept the bounded network-wide route and stop lists returned by live Trip Planner

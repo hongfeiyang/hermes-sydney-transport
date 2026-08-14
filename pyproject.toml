@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-sydney-transport"
-version = "0.7.1"
+version = "0.7.2"
 description = "A Hermes Agent plugin for Sydney public transport, live road hazards, and NSW road traffic counts"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
