@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -16,6 +17,7 @@ from hermes_sydney_transport.adapters.tfnsw.platform import (
 from hermes_sydney_transport.adapters.tfnsw.wire.live_traffic import (
     FeatureCollectionWire,
 )
+from hermes_sydney_transport.adapters.tfnsw.wire.trip_planner import AlertsPayloadWire
 from hermes_sydney_transport.models.errors import DomainError
 
 
@@ -248,6 +250,27 @@ class JsonModelCodecContractTests(unittest.TestCase):
                 codec.decode(payload)
             self.assertEqual(caught.exception.code, "invalid_upstream_response")
             self.assertNotIn(payload.decode(), str(caught.exception))
+
+    def test_alert_affected_entities_enforce_the_250_item_wire_bound(self) -> None:
+        codec = JsonModelCodec(AlertsPayloadWire, source="Trip Planner alerts")
+
+        for field in ("lines", "stops"):
+            with self.subTest(field=field):
+                entities = [{"id": str(index)} for index in range(250)]
+                payload = {"infos": {"current": [{"affected": {field: entities}}]}}
+                decoded = codec(json.dumps(payload).encode())
+                affected = getattr(decoded.infos.current[0].affected, field)
+                self.assertEqual(len(affected), 250)
+
+                payload["infos"]["current"][0]["affected"][field].append(
+                    {"id": "overflow"}
+                )
+                with self.assertRaises(DomainError) as caught:
+                    codec(json.dumps(payload).encode())
+                self.assertEqual(
+                    caught.exception.code,
+                    "invalid_upstream_response",
+                )
 
 
 if __name__ == "__main__":
