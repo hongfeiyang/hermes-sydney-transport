@@ -1,6 +1,6 @@
 manifest_version: 1
 name: sydney-transport
-version: "0.7.0"
+version: "0.7.1"
 description: Plan Sydney public-transport trips, inspect realtime disruptions and vehicles, check accessibility and timetables, and query live and historical NSW road data from official TfNSW sources.
 author: Hermes Sydney Transport contributors
 kind: standalone

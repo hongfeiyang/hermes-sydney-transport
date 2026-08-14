@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 - 2026-08-14
+
+- Accept the bounded network-wide route and stop lists returned by live Trip Planner
+  alerts; the former limit of 20 rejected valid current TfNSW responses.
+- Add a regression contract using the affected-entity cardinalities observed in the
+  live provider response.
+
 ## 0.7.0 - 2026-08-14
 
 - Refactored every TfNSW integration into one enforced catalogs/platform/codecs/wire/

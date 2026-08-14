@@ -193,9 +193,17 @@ class AffectedWire(WireModel):
     number: NullableText = None
 
 
+AffectedEntitiesWire = Annotated[
+    tuple[AffectedWire, ...],
+    Field(max_length=250),
+]
+
+
 class AffectedGroupsWire(WireModel):
-    lines: Annotated[tuple[AffectedWire, ...], Field(max_length=20)] = ()
-    stops: Annotated[tuple[AffectedWire, ...], Field(max_length=20)] = ()
+    # Network-wide alerts legitimately enumerate hundreds of routes or stops.
+    # Keep the response bounded without rejecting the provider's observed shape.
+    lines: AffectedEntitiesWire = ()
+    stops: AffectedEntitiesWire = ()
 
 
 class TimeRangeWire(WireModel):

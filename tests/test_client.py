@@ -638,6 +638,35 @@ class TfnswClientTests(unittest.TestCase):
         self.assertIn(("filterMOTType", "1"), params)
         self.assertIn(("itdLPxx_selStop", "200060"), params)
 
+    def test_alerts_accept_bounded_network_wide_affected_entities(self):
+        affected_lines = [{"id": f"L{index}"} for index in range(197)]
+        affected_stops = [{"id": f"S{index}"} for index in range(111)]
+        transport = FakeTransport(
+            {
+                "/add_info": {
+                    "infos": {
+                        "current": [
+                            {
+                                "id": "network-alert",
+                                "subtitle": "Network alert",
+                                "affected": {
+                                    "lines": affected_lines,
+                                    "stops": affected_stops,
+                                },
+                            }
+                        ]
+                    }
+                }
+            }
+        )
+        client = TfnswClient("test-key", transport=transport, now=self._now)
+
+        result = client.alerts(modes=["train"])
+
+        alert = result["alerts"][0]
+        self.assertEqual(len(alert["affected_lines"]), 197)
+        self.assertEqual(len(alert["affected_stops"]), 111)
+
     def test_naive_time_is_interpreted_in_sydney_and_horizon_is_bounded(self):
         transport = FakeTransport(
             {"/departure_mon": {"locations": [], "stopEvents": []}}
