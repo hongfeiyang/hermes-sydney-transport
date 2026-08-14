@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from datetime import time as datetime_time
 from pathlib import Path
 from typing import Literal
@@ -20,7 +20,7 @@ from ....ports.timetable import (
     TimetableTripRecord,
 )
 from .complete_gtfs_index import SCHEMA_VERSION, build_complete_index
-from .metadata import metadata_datetime, read_metadata
+from .metadata import metadata_datetime, read_metadata, write_metadata
 from .resources import StaticResourceStore
 
 _SYDNEY = ZoneInfo("Australia/Sydney")
@@ -36,8 +36,11 @@ class CompleteGtfsStore:
         self._connection: sqlite3.Connection | None = None
         self.cache_stale = False
 
-    def refresh(self) -> None:
+    def refresh(self, *, max_age_seconds: int = 0) -> None:
         self._open_existing()
+        if self._cache_is_fresh(max_age_seconds):
+            self.cache_stale = False
+            return
         has_cache = self._connection is not None
         try:
             self._replace_from_remote()
@@ -82,6 +85,7 @@ class CompleteGtfsStore:
         with tempfile.TemporaryDirectory(
             prefix=".complete-gtfs-refresh-", dir=self._database_path.parent
         ) as directory:
+            checked_at = datetime.now(UTC)
             archive_path = Path(directory) / "complete-gtfs.zip"
             download = self._resource.download(
                 "complete_gtfs", archive_path, if_modified_since=previous
@@ -92,10 +96,17 @@ class CompleteGtfsStore:
                         "static_data_unavailable",
                         "TfNSW returned not-modified without a Complete GTFS cache.",
                     )
+                write_metadata(self._connection, "checked_at", checked_at.isoformat())
+                self._connection.commit()
                 self.cache_stale = False
                 return
             temporary_index = Path(directory) / "complete-gtfs.sqlite3"
-            build_complete_index(temporary_index, archive_path, download.last_modified)
+            build_complete_index(
+                temporary_index,
+                archive_path,
+                download.last_modified,
+                checked_at,
+            )
             self.close()
             os.replace(temporary_index, self._database_path)
             self._connection = _connect(self._database_path)
@@ -113,6 +124,20 @@ class CompleteGtfsStore:
             connection.close()
             return
         self._connection = connection
+
+    def _cache_is_fresh(self, max_age_seconds: int) -> bool:
+        if self._connection is None or max_age_seconds <= 0:
+            return False
+        checked_at = metadata_datetime(self._connection, "checked_at")
+        if checked_at is None:
+            try:
+                checked_at = datetime.fromtimestamp(
+                    self._database_path.stat().st_mtime, tz=UTC
+                )
+            except OSError:
+                return False
+        age = (datetime.now(UTC) - checked_at).total_seconds()
+        return 0 <= age < max_age_seconds
 
     def _require_connection(self) -> sqlite3.Connection:
         if self._connection is None:

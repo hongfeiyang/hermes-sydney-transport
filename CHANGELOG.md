@@ -6,6 +6,8 @@
   alerts; the former limit of 20 rejected valid current TfNSW responses.
 - Add a regression contract using the affected-entity cardinalities observed in the
   live provider response.
+- Persist the Complete GTFS refresh window so a new Hermes process reuses the warm
+  540 MB timetable index instead of downloading and rebuilding it again.
 
 ## 0.7.0 - 2026-08-14
 

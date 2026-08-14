@@ -29,7 +29,7 @@ class CompleteGtfsTimetableAdapter(RouteTimetablePort):
         with self._lock:
             now = time.monotonic()
             if self._checked_at is None or now - self._checked_at >= _REFRESH_SECONDS:
-                self._store.refresh()
+                self._store.refresh(max_age_seconds=_REFRESH_SECONDS)
                 self._checked_at = now
             return self._store.snapshot(request, service_date)
 

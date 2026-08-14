@@ -274,10 +274,29 @@ class StaticAdapterTests(unittest.TestCase):
         self.assertEqual(snapshot.trips[0].last_arrival.day, 19)
         self.assertEqual(snapshot.trips[0].last_arrival.hour, 1)
 
+    def test_complete_gtfs_new_instance_reuses_fresh_persistent_index(self):
+        transport = FixtureTransport({"complete_gtfs": _complete_gtfs()})
+        request = RouteTimetableInput.model_validate(
+            {"route_id": "R1", "service_date": "2026-08-18", "limit": 1}
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "complete.sqlite3"
+            first = CompleteGtfsTimetableAdapter(transport, database_path=path)
+            first.get_route_timetable(request, request.service_date)
+            first.close()
+
+            second = CompleteGtfsTimetableAdapter(transport, database_path=path)
+            snapshot = second.get_route_timetable(request, request.service_date)
+            second.close()
+
+        self.assertEqual(transport.download_count, 1)
+        self.assertEqual(snapshot.trips[0].trip_id, "trip-added")
+
 
 class FixtureTransport:
     def __init__(self, payloads: dict[str, bytes]) -> None:
         self.payloads = payloads
+        self.download_count = 0
 
     def download(
         self,
@@ -286,6 +305,7 @@ class FixtureTransport:
         *,
         if_modified_since: datetime | None = None,
     ) -> StaticDownload:
+        self.download_count += 1
         destination.write_bytes(self.payloads[resource])
         return StaticDownload(not_modified=False, last_modified=UPDATED)
 

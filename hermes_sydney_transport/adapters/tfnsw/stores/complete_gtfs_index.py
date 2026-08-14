@@ -22,7 +22,10 @@ _INSERT_BATCH = 2_000
 
 
 def build_complete_index(
-    database_path: Path, archive_path: Path, last_modified: datetime | None
+    database_path: Path,
+    archive_path: Path,
+    last_modified: datetime | None,
+    checked_at: datetime,
 ) -> None:
     connection = _connect(database_path)
     try:
@@ -85,6 +88,7 @@ def build_complete_index(
             (
                 ("schema_version", SCHEMA_VERSION),
                 ("last_modified", last_modified.isoformat() if last_modified else ""),
+                ("checked_at", checked_at.isoformat()),
             ),
         )
         connection.commit()
