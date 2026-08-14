@@ -19,13 +19,18 @@ class PackagingTests(unittest.TestCase):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
         self.assertIn("name: sydney-transport", manifest)
-        self.assertIn('version: "0.6.0"', manifest)
+        self.assertIn('version: "0.7.0"', manifest)
         self.assertEqual(project["project"]["name"], "hermes-sydney-transport")
-        self.assertEqual(project["project"]["version"], "0.6.0")
+        self.assertEqual(project["project"]["version"], "0.7.0")
         self.assertEqual(__version__, project["project"]["version"])
         self.assertEqual(
             project["project"]["dependencies"],
-            ["pydantic>=2.9,<3", "protobuf>=6.31,<8"],
+            [
+                "httpx>=0.28,<1",
+                "pydantic>=2.9,<3",
+                "protobuf>=6.31,<8",
+                "tenacity>=9,<10",
+            ],
         )
         self.assertEqual(
             project["project"]["entry-points"]["hermes_agent.plugins"][

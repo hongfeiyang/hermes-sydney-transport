@@ -24,7 +24,8 @@ types() {
       UV_TOOL_DIR="${UV_TOOL_DIR:-/tmp/sydney-transport-uv-tools}" \
       UV_TOOL_BIN_DIR="${UV_TOOL_BIN_DIR:-/tmp/sydney-transport-uv-bin}" \
       uv tool run --from 'mypy>=1.15,<2' \
-      --with 'pydantic>=2.9,<3' --with 'protobuf>=6.31,<8' \
+      --with 'httpx>=0.28,<1' --with 'pydantic>=2.9,<3' \
+      --with 'protobuf>=6.31,<8' --with 'tenacity>=9,<10' \
       mypy hermes_sydney_transport
   else
     echo "mypy is required; install the dev extra with: pip install -e '.[dev]'" >&2

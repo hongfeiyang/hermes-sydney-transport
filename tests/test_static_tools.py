@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import sqlite3
 import tempfile
 import unittest
 import zipfile
@@ -9,13 +10,16 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from hermes_sydney_transport.adapters.tfnsw.complete_gtfs import (
+from hermes_sydney_transport.adapters.tfnsw.repositories.complete_gtfs import (
     CompleteGtfsTimetableAdapter,
 )
-from hermes_sydney_transport.adapters.tfnsw.facilities import TfnswFacilitiesAdapter
-from hermes_sydney_transport.adapters.tfnsw.static_resources import StaticDownload
+from hermes_sydney_transport.adapters.tfnsw.repositories.facilities import (
+    TfnswFacilitiesAdapter,
+)
+from hermes_sydney_transport.adapters.tfnsw.stores import StaticDownload
 from hermes_sydney_transport.application.accessibility import GetStopAccessibility
 from hermes_sydney_transport.application.timetable import GetRouteTimetable
+from hermes_sydney_transport.models.availability import Availability, Unavailable
 from hermes_sydney_transport.models.errors import DomainError
 from hermes_sydney_transport.models.static_inputs import (
     RouteTimetableInput,
@@ -102,6 +106,17 @@ class FakeAlerts:
                 trip_ids=(),
             ),
         )
+
+    def query_alerts(self, query: AlertQuery) -> Availability[tuple[AlertRecord, ...]]:
+        if self.error:
+            self.query = query
+            return Availability(
+                value=None,
+                unavailable=Unavailable(
+                    "realtime_feed_unavailable", "alerts unavailable", True
+                ),
+            )
+        return Availability(value=self.find_alerts(query))
 
 
 class FakeTimetable:
@@ -218,6 +233,29 @@ class StaticAdapterTests(unittest.TestCase):
         self.assertEqual(snapshot.facility.facilities, ("Toilets", "Taxi rank"))
         self.assertEqual(snapshot.lifts[0].functional_location_code, "LIFT-1")
 
+    def test_facilities_rebuild_obsolete_cache_schema(self):
+        payloads = {
+            "location_facilities": _facility_csv(),
+            "interchange_lifts": _lift_workbook(),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "facilities.sqlite3"
+            _legacy_facility_cache(path)
+            adapter = TfnswFacilitiesAdapter(
+                FixtureTransport(payloads), database_path=path
+            )
+            self.addCleanup(adapter.close)
+
+            snapshot = adapter.get_facility("10101100")
+            with sqlite3.connect(path) as connection:
+                version = connection.execute(
+                    "SELECT value FROM metadata WHERE key='schema_version'"
+                ).fetchone()[0]
+
+        self.assertEqual(version, "2")
+        self.assertEqual(snapshot.facility.name, "Central Station")
+        self.assertEqual(snapshot.facility.facilities, ("Toilets", "Taxi rank"))
+
     def test_complete_gtfs_applies_calendar_exception_and_after_midnight_time(self):
         with tempfile.TemporaryDirectory() as directory:
             adapter = CompleteGtfsTimetableAdapter(
@@ -260,6 +298,28 @@ def _facility_csv() -> bytes:
         b'"Toilets|Taxi rank",Train,"Eddy Avenue, Haymarket",, -33.883,151.207,'
         b"05:00-09:00,,False\n"
     )
+
+
+def _legacy_facility_cache(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO metadata VALUES ('schema_version', '1');
+            CREATE TABLE facilities (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL, efa_id TEXT NOT NULL,
+                tsn TEXT NOT NULL, accessibility_classification TEXT,
+                accessibility_features TEXT
+            );
+            INSERT INTO facilities VALUES (
+                1, 'Old Central', '10101100', '200060', 'old', 'old'
+            );
+            CREATE TABLE lifts (
+                id INTEGER PRIMARY KEY, tsn TEXT NOT NULL,
+                functional_location_code TEXT, description TEXT, record_updated_at TEXT
+            );
+            """
+        )
 
 
 def _lift_workbook() -> bytes:

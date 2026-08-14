@@ -13,6 +13,7 @@ from ..models.inputs import (
 )
 from ..models.metadata import ATTRIBUTION
 from ..models.outputs import (
+    AlertScope,
     AlertsResult,
     DeparturesResult,
     NearbyQuery,
@@ -182,17 +183,18 @@ class GetAlerts:
         )
         alerts.sort(key=lambda item: alert_priority_rank(item.priority), reverse=True)
         alerts = alerts[: request.limit]
-        return AlertsResult.model_validate(
-            {
-                "fetched_at": self._clock.now(),
-                "source": _SOURCE,
-                "attribution": ATTRIBUTION,
-                "scope": {"stop_id": request.stop_id}
-                if request.stop_id
-                else {"network": "tfnsw_" + "_".join(request.modes) + "_modes"},
-                "requested_modes": request.modes,
-                "alerts": alerts,
-                "count": len(alerts),
-                "remote_content_is_untrusted": True,
-            }
+        scope = (
+            AlertScope(stop_id=request.stop_id)
+            if request.stop_id
+            else AlertScope(network="tfnsw_" + "_".join(request.modes) + "_modes")
+        )
+        return AlertsResult(
+            fetched_at=self._clock.now(),
+            source=_SOURCE,
+            attribution=ATTRIBUTION,
+            scope=scope,
+            requested_modes=request.modes,
+            alerts=alerts,
+            count=len(alerts),
+            remote_content_is_untrusted=True,
         )

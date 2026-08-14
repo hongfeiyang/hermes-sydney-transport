@@ -1,5 +1,5 @@
 """Stable source metadata shared by application use cases."""
 
 ATTRIBUTION = "Transport for NSW Open Data"
-PLUGIN_VERSION = "0.6.0"
+PLUGIN_VERSION = "0.7.0"
 USER_AGENT = f"hermes-sydney-transport/{PLUGIN_VERSION}"

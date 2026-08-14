@@ -1,21 +1,16 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import datetime
-from io import BytesIO
-from unittest.mock import patch
-from urllib.error import HTTPError, URLError
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
-from hermes_sydney_transport.adapters.tfnsw.trip_planner import (
-    TfnswApiError,
-    UrllibJsonTransport,
-    html_to_plaintext,
-)
-from hermes_sydney_transport.adapters.tfnsw.trip_planner import (
-    TfnswClient as TfnswAdapter,
+from hermes_sydney_transport.adapters.tfnsw.codecs.rich_text import plain_text
+from hermes_sydney_transport.adapters.tfnsw.platform import HttpPayload
+from hermes_sydney_transport.adapters.tfnsw.repositories.trip_planner import (
+    TfnswTripPlannerRepository,
 )
 from hermes_sydney_transport.application.trip_planner import (
     FindNearbyStops,
@@ -24,6 +19,7 @@ from hermes_sydney_transport.application.trip_planner import (
     PlanJourney,
     SearchStops,
 )
+from hermes_sydney_transport.models.errors import DomainError as TfnswApiError
 from hermes_sydney_transport.models.inputs import (
     AlertsInput,
     DeparturesInput,
@@ -47,7 +43,7 @@ class TfnswClient:
     """Application test facade preserving the old convenience call shape."""
 
     def __init__(self, api_key, *, transport=None, now=None):
-        adapter = TfnswAdapter(api_key, transport=transport)
+        adapter = TfnswTripPlannerRepository(transport)
         self.clock = FixedClock(now or (lambda: datetime.now(SYDNEY)))
         self.adapter = adapter
         self.search_use_case = SearchStops(adapter, self.clock)
@@ -136,150 +132,18 @@ class FakeTransport:
         self.payloads = payloads
         self.calls = []
 
-    def get_json(self, path, params):
+    def fetch(self, endpoint, *, params=None, if_modified_since=None):
+        path = {
+            "trip_planner_stop_finder": "/stop_finder",
+            "trip_planner_nearby": "/coord",
+            "trip_planner_departures": "/departure_mon",
+            "trip_planner_journey": "/trip",
+            "trip_planner_alerts": "/add_info",
+        }[endpoint.id]
         self.calls.append((path, params))
-        return self.payloads[path]
-
-
-class FakeResponse:
-    def __init__(self, body: bytes):
-        self.body = body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        return False
-
-    def read(self, limit):
-        return self.body[:limit]
-
-
-class UrllibJsonTransportTests(unittest.TestCase):
-    def test_retries_rate_limit_and_honours_bounded_retry_after(self):
-        sleeps = []
-        response_body = BytesIO()
-        rate_limit = HTTPError(
-            "https://api.transport.nsw.gov.au/v1/tp/stop_finder",
-            429,
-            "Too Many Requests",
-            {"Retry-After": "99"},
-            response_body,
+        return HttpPayload(
+            json.dumps(self.payloads[path]).encode(), "application/json", None
         )
-        transport = UrllibJsonTransport(
-            "test-key", sleeper=sleeps.append, random_source=lambda: 0
-        )
-
-        with patch.object(
-            transport._opener,
-            "open",
-            side_effect=[rate_limit, FakeResponse(b'{"locations": []}')],
-        ) as mocked_open:
-            payload = transport.get_json(
-                "/stop_finder", [("name_sf", "Central Station")]
-            )
-
-        self.assertEqual(payload, {"locations": []})
-        self.assertEqual(mocked_open.call_count, 2)
-        self.assertEqual(sleeps, [5.0])
-        self.assertTrue(response_body.closed)
-        request = mocked_open.call_args_list[0].args[0]
-        self.assertEqual(request.get_header("Authorization"), "apikey test-key")
-        self.assertIn("name_sf=Central+Station", request.full_url)
-
-    def test_authentication_failure_is_structured_and_does_not_leak_key(self):
-        response_body = BytesIO()
-        auth_error = HTTPError(
-            "https://api.transport.nsw.gov.au/v1/tp/stop_finder",
-            401,
-            "Unauthorized",
-            None,
-            response_body,
-        )
-        transport = UrllibJsonTransport("super-secret-test-key")
-
-        with (
-            patch.object(transport._opener, "open", side_effect=auth_error),
-            self.assertRaises(TfnswApiError) as raised,
-        ):
-            transport.get_json("/stop_finder", [("name_sf", "Central")])
-
-        self.assertEqual(raised.exception.code, "authentication_failed")
-        self.assertEqual(raised.exception.http_status, 401)
-        self.assertNotIn("super-secret-test-key", str(raised.exception))
-        self.assertTrue(response_body.closed)
-
-    def test_network_failures_retry_then_return_safe_error(self):
-        sleeps = []
-        transport = UrllibJsonTransport(
-            "test-key", max_attempts=2, sleeper=sleeps.append, random_source=lambda: 0
-        )
-
-        with (
-            patch.object(
-                transport._opener,
-                "open",
-                side_effect=URLError("connection refused"),
-            ) as mocked_open,
-            self.assertRaises(TfnswApiError) as raised,
-        ):
-            transport.get_json("/add_info", [("filterMOTType", "1")])
-
-        self.assertEqual(mocked_open.call_count, 2)
-        self.assertEqual(sleeps, [0.25])
-        self.assertEqual(raised.exception.code, "upstream_unavailable")
-        self.assertTrue(raised.exception.retryable)
-
-    def test_invalid_json_is_not_retried(self):
-        transport = UrllibJsonTransport("test-key")
-
-        with (
-            patch.object(
-                transport._opener,
-                "open",
-                return_value=FakeResponse(b"not-json"),
-            ) as mocked_open,
-            self.assertRaises(TfnswApiError) as raised,
-        ):
-            transport.get_json("/departure_mon", [("name_dm", "200060")])
-
-        self.assertEqual(mocked_open.call_count, 1)
-        self.assertEqual(raised.exception.code, "invalid_upstream_response")
-        self.assertFalse(raised.exception.retryable)
-
-    def test_rejects_non_allowlisted_endpoint_before_network_access(self):
-        transport = UrllibJsonTransport("test-key")
-
-        with (
-            patch.object(transport._opener, "open") as mocked_open,
-            self.assertRaises(ValueError),
-        ):
-            transport.get_json("/arbitrary", [])
-
-        mocked_open.assert_not_called()
-
-    def test_redirect_is_rejected_without_a_second_request(self):
-        transport = UrllibJsonTransport("super-secret-test-key")
-        redirect = HTTPError(
-            "https://api.transport.nsw.gov.au/v1/tp/stop_finder",
-            302,
-            "Found",
-            {"Location": "https://attacker.invalid/collect"},
-            BytesIO(),
-        )
-
-        with (
-            patch.object(
-                transport._opener, "open", side_effect=redirect
-            ) as mocked_open,
-            self.assertRaises(TfnswApiError) as raised,
-        ):
-            transport.get_json("/stop_finder", [("name_sf", "Central")])
-
-        self.assertEqual(mocked_open.call_count, 1)
-        self.assertEqual(raised.exception.http_status, 302)
-        self.assertFalse(raised.exception.retryable)
-        self.assertTrue(redirect.closed)
 
 
 class TfnswClientTests(unittest.TestCase):
@@ -811,10 +675,8 @@ class TfnswClientTests(unittest.TestCase):
             client.alerts(stop_id=[])
 
     def test_html_to_plaintext_is_bounded(self):
-        self.assertEqual(
-            html_to_plaintext("<p>Hello&nbsp;<b>world</b></p>"), "Hello world"
-        )
-        self.assertEqual(html_to_plaintext("abcdefghij", max_chars=5), "abcd…")
+        self.assertEqual(plain_text("<p>Hello&nbsp;<b>world</b></p>"), "Hello world")
+        self.assertEqual(plain_text("abcdefghij", max_chars=5), "abcd…")
 
     @staticmethod
     def _now():

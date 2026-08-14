@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from ..models.availability import Availability
 from .realtime import TransportMode
 
 
@@ -58,3 +59,7 @@ class AlertsPort(Protocol):
     """Typed boundary implemented by GTFS-Realtime alerts adapters."""
 
     def find_alerts(self, query: AlertQuery) -> tuple[AlertRecord, ...]: ...
+
+    def query_alerts(
+        self, query: AlertQuery
+    ) -> Availability[tuple[AlertRecord, ...]]: ...

@@ -8,6 +8,8 @@ from datetime import date, datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Protocol
 
+from ..models.availability import Availability
+
 
 class TransportMode(StrEnum):
     TRAIN = "train"
@@ -217,3 +219,9 @@ class StaticSchedulePort(Protocol):
     def get_stop_references(
         self, stop_ids: Collection[str]
     ) -> Mapping[str, StaticStopReference]: ...
+
+    def lookup_trip(self, service_id: str) -> Availability[StaticTrip | None]: ...
+
+    def lookup_stop_references(
+        self, stop_ids: Collection[str]
+    ) -> Availability[Mapping[str, StaticStopReference]]: ...

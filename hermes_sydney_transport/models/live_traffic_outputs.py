@@ -6,7 +6,14 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .outputs import Coordinates, PluginOutput, ResultMetadata, Timestamp
+from .live_traffic_inputs import HazardType
+from .outputs import (
+    CanonicalRecord,
+    Coordinates,
+    PluginOutput,
+    ResultMetadata,
+    Timestamp,
+)
 
 
 class LiveTrafficHazardsQuery(PluginOutput):
@@ -14,10 +21,10 @@ class LiveTrafficHazardsQuery(PluginOutput):
     longitude: float | None = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
     suburb: str | None
     radius_metres: int | None = Field(default=None, ge=100, le=50000)
-    hazard_types: list[str]
+    hazard_types: list[HazardType]
 
 
-class LiveTrafficRoad(PluginOutput):
+class LiveTrafficRoad(CanonicalRecord):
     main_street: str | None
     cross_street: str | None
     location_qualifier: str | None
@@ -29,27 +36,19 @@ class LiveTrafficRoad(PluginOutput):
     queue_length_km: float | None = Field(default=None, ge=0)
 
 
-class LiveTrafficLink(PluginOutput):
+class LiveTrafficLink(CanonicalRecord):
     text: str
     url: str
 
 
-class LiveTrafficHazard(PluginOutput):
+class LiveTrafficHazard(CanonicalRecord):
     id: str
-    hazard_type: Literal[
-        "incident",
-        "fire",
-        "flood",
-        "alpine",
-        "major_event",
-        "roadwork",
-        "regional_lga_incident",
-    ]
+    hazard_type: HazardType
     incident_kind: str
     display_name: str
     headline: str | None
     main_category: str | None
-    advice: list[str]
+    advice: tuple[str, ...]
     other_advice: str
     public_transport: str
     impacting_network: bool
@@ -62,8 +61,8 @@ class LiveTrafficHazard(PluginOutput):
     end_at: Timestamp | None
     distance_metres: int | None = Field(default=None, ge=0)
     coordinates: Coordinates
-    roads: list[LiveTrafficRoad]
-    links: list[LiveTrafficLink]
+    roads: tuple[LiveTrafficRoad, ...]
+    links: tuple[LiveTrafficLink, ...]
 
 
 class LiveTrafficHazardsResult(ResultMetadata):

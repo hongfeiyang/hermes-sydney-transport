@@ -114,11 +114,38 @@ Boundary:
 RequestModel + injected ports -> ResultModel or DomainError
 ```
 
-### 2.4 Adapters — `adapters/`
+### 2.4 Adapters — `adapters/tfnsw/`
 
-Owns all external-system details. Organize adapters by provider and transport, for
-example `adapters/tfnsw/trip_planner_http.py` and
-`adapters/tfnsw/gtfs_realtime_decoder.py`.
+Owns all external-system details. Provider code has one legal internal grammar; a
+feature cannot invent another transport, parser, mapper, or orchestration path:
+
+```text
+catalogs ─────────────┐
+platform ─────────────┤
+codecs ──► wire ──────┼──► repositories ──► semantic ports
+mappers ─► wire ──────┤
+stores ──► codecs ────┘
+```
+
+The directory roles and imports are machine-readable in `architecture.toml`:
+
+- `catalogs/` owns immutable endpoint and dataset specifications;
+- `platform/` owns the sole persistent HTTP client, auth, retry, redirect, deadline,
+  content-type, conditional-request, and response-size policy;
+- `codecs/` is the only parsing boundary for JSON, protobuf, CSV, ZIP, and XLSX/XML;
+- `wire/` owns strict frozen Pydantic models with upstream aliases and bounds;
+- `mappers/` owns small pure wire-to-canonical transformations and filters;
+- `stores/` owns atomic files, SQLite indexes, freshness, and rollback;
+- `repositories/` composes the preceding roles and implements semantic ports.
+
+Only `__init__.py` may live at the provider root. Repositories and mappers contain no
+`try` blocks; vendor exceptions are translated once where they arise in platform,
+codec, or store boundaries. They also cannot decode bytes, split line-oriented text,
+instantiate HTML parsers, parse timestamp strings, or validate dictionary projections.
+Raw mappings do not pass from codecs into repositories. Public `wire/` records in any
+nested wire module must inherit from the shared frozen `WireModel` family.
+Dynamic `Any` values are confined to protobuf codecs; catalogs, platform, wire,
+mappers, stores, and repositories are explicitly typed.
 
 Must:
 
@@ -189,6 +216,11 @@ The composition root is reused across handler calls for an unchanged validated
 settings object. This makes transport, realtime-feed, and static-index caches live for
 the gateway lifetime while still replacing the container after a configuration change.
 
+Expected degradation is not modeled by catching exceptions in application code.
+Infrastructure converts a declared `DomainError` once into `Availability[T]`; use
+cases inspect the typed availability and preserve the primary result with an explicit
+warning/status. Unexpected faults continue to the presentation error boundary.
+
 ## 2.7 The single extension path
 
 A capability has exactly one legal route into the runtime:
@@ -204,6 +236,13 @@ The generic handler is generated from `ToolSpec`, and
 `bootstrap/registration.py` iterates the same catalog. There is no second schema
 registry, handler list, or registration table to update. Handwritten Hermes handlers
 and additional `ctx.register_tool` call sites are architecture violations.
+
+Adding a transport mode has a separate single data-only extension point:
+`bootstrap/modes.py`. One `ModeSpec` row binds the `TransportMode`, cache slug,
+`ModePolicy`, Alerts sources, complete endpoint bundle, service-status capability, and
+vehicle-position capability. The composition root derives repository dependencies from
+that registry. Repository defaults, parallel mode-keyed tables, and handwritten
+per-mode construction are forbidden because each would create a second extension path.
 
 ### 2.8 Generated — `proto/`
 
@@ -283,14 +322,17 @@ adapter into application code at runtime is allowed; importing its class there i
 
 ## 7. Zero-exception enforcement
 
-The 0.4 mixed root modules have been removed. Only package `__init__.py` may live at
-the runtime package root. `architecture.toml` has no legacy module list or line-count
-budget: architecture conformance is binary.
+The legacy mixed root modules have been removed. Only package `__init__.py` may live
+at the runtime package root, and only `__init__.py` may live at the TfNSW provider
+root. `architecture.toml` has no grandfathered modules or raised legacy budgets:
+architecture conformance is binary.
 
 The checker enforces layer ownership, dependency direction, forbidden capabilities,
 the sole registration call site, the root-module set, forbidden legacy package paths,
-PEP 695 generic syntax, and the raw-SQL adapter boundary. Any exception requires an
-ADR and an explicit policy change; “it was faster” is not sufficient justification.
+PEP 695 generic syntax, Pydantic wire inheritance, explicit adapter types, one mode
+registry, parser ownership, exception boundaries, size/complexity ceilings, and the
+raw-SQL adapter boundary. Any policy exception requires an ADR and an explicit
+contract change; “it was faster” is not sufficient justification.
 
 ## 8. Definition of done for a feature
 

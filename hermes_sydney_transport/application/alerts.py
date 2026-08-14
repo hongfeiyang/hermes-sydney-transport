@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import UTC
 
 from ..models.disruption_inputs import RouteDisruptionsInput
-from ..models.disruption_outputs import RouteDisruptionsResult
+from ..models.disruption_outputs import (
+    DisruptionQuery,
+    DisruptionSelector,
+    DisruptionTimeRange,
+    RouteDisruption,
+    RouteDisruptionsResult,
+)
 from ..models.metadata import ATTRIBUTION
 from ..ports.alerts import AlertQuery, AlertsPort
 from ..ports.clock import Clock
@@ -54,53 +60,44 @@ class GetRouteDisruptions:
             reverse=True,
         )
         disruptions = disruptions[: request.limit]
-        return RouteDisruptionsResult.model_validate(
-            {
-                "fetched_at": now,
-                "source": _SOURCE,
-                "attribution": ATTRIBUTION,
-                "query": {
-                    "requested_modes": request.modes,
-                    "stop_id": request.stop_id,
-                    "route_id": request.route_id,
-                    "trip_id": request.trip_id,
-                    "requested_at": effective.at,
-                    "causes": request.causes,
-                    "effects": request.effects,
-                },
-                "disruptions": [
-                    {
-                        "id": item.id,
-                        "mode": item.mode.value,
-                        "source_feed": item.source_feed,
-                        "title": item.title,
-                        "description": item.description,
-                        "cause": item.cause,
-                        "effect": item.effect,
-                        "severity": item.severity,
-                        "url": item.url,
-                        "active_periods": [
-                            {"start": period.start, "end": period.end}
-                            for period in item.active_periods
-                        ],
-                        "selectors": [
-                            {
-                                "agency_id": selector.agency_id,
-                                "route_id": selector.route_id,
-                                "route_type": selector.route_type,
-                                "stop_id": selector.stop_id,
-                                "trip_id": selector.trip_id,
-                                "direction_id": selector.direction_id,
-                            }
-                            for selector in item.selectors
-                        ],
-                        "route_ids": list(item.route_ids),
-                        "stop_ids": list(item.stop_ids),
-                        "trip_ids": list(item.trip_ids),
-                    }
-                    for item in disruptions
-                ],
-                "count": len(disruptions),
-                "remote_content_is_untrusted": True,
-            }
+        return RouteDisruptionsResult(
+            fetched_at=now,
+            source=_SOURCE,
+            attribution=ATTRIBUTION,
+            query=DisruptionQuery(
+                requested_modes=request.modes,
+                stop_id=request.stop_id,
+                route_id=request.route_id,
+                trip_id=request.trip_id,
+                requested_at=effective.at,
+                causes=request.causes,
+                effects=request.effects,
+            ),
+            disruptions=[
+                RouteDisruption(
+                    id=item.id,
+                    mode=item.mode.value,
+                    source_feed=item.source_feed,
+                    title=item.title,
+                    description=item.description,
+                    cause=item.cause,
+                    effect=item.effect,
+                    severity=item.severity,
+                    url=item.url,
+                    active_periods=[
+                        DisruptionTimeRange.model_validate(part, from_attributes=True)
+                        for part in item.active_periods
+                    ],
+                    selectors=[
+                        DisruptionSelector.model_validate(part, from_attributes=True)
+                        for part in item.selectors
+                    ],
+                    route_ids=list(item.route_ids),
+                    stop_ids=list(item.stop_ids),
+                    trip_ids=list(item.trip_ids),
+                )
+                for item in disruptions
+            ],
+            count=len(disruptions),
+            remote_content_is_untrusted=True,
         )

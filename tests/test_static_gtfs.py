@@ -7,9 +7,13 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from hermes_sydney_transport.adapters.tfnsw.binary_transport import BinaryResponse
-from hermes_sydney_transport.adapters.tfnsw.static_gtfs import StaticGtfsRepository
+from hermes_sydney_transport.adapters.tfnsw.platform import HttpPayload
+from hermes_sydney_transport.adapters.tfnsw.repositories.static_gtfs import (
+    StaticGtfsRepository,
+)
+from hermes_sydney_transport.bootstrap.modes import MODE_SPECS
 from hermes_sydney_transport.models.errors import DomainError as TfnswApiError
+from hermes_sydney_transport.ports.realtime import TransportMode
 
 
 class FakeTransport:
@@ -17,25 +21,14 @@ class FakeTransport:
         self.body = body
         self.calls = []
 
-    def get(self, endpoint, **kwargs):
-        self.calls.append((endpoint, kwargs))
-        body = self.body[0] if isinstance(self.body, tuple) else self.body
-        return BinaryResponse(
-            data=body,
-            content_type="application/zip",
-            last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
-        )
-
-    def get_all(self, endpoint, **kwargs):
+    def fetch(self, endpoint, **kwargs):
         self.calls.append((endpoint, kwargs))
         bodies = self.body if isinstance(self.body, tuple) else (self.body,)
-        return tuple(
-            BinaryResponse(
-                data=body,
-                content_type="application/zip",
-                last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
-            )
-            for body in bodies
+        body = bodies[min(len(self.calls) - 1, len(bodies) - 1)]
+        return HttpPayload(
+            body=body,
+            content_type="application/zip",
+            last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
         )
 
 
@@ -44,21 +37,20 @@ class NotModifiedTransport:
         self.body = body
         self.calls = []
 
-    def get_all(self, endpoint, **kwargs):
+    def fetch(self, endpoint, **kwargs):
         self.calls.append((endpoint, kwargs))
-        return (
-            BinaryResponse(
-                data=self.body,
-                content_type="application/zip",
-                last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
-            ),
+        return HttpPayload(
+            body=None,
+            content_type="application/zip",
+            last_modified="Wed, 12 Aug 2026 08:00:00 GMT",
+            not_modified=True,
         )
 
 
 class StaticGtfsTests(unittest.TestCase):
     def test_lazy_trip_join_and_stop_metadata_are_cached(self):
         transport = FakeTransport(_bundle())
-        repository = StaticGtfsRepository(transport)
+        repository = StaticGtfsRepository(transport, endpoints=_feeds().static_schedule)
         self.addCleanup(repository.close)
 
         trip = repository.get_trip("trip-1")
@@ -76,7 +68,9 @@ class StaticGtfsTests(unittest.TestCase):
         self.assertEqual(len(transport.calls), 1)
 
     def test_invalid_zip_fails_closed(self):
-        repository = StaticGtfsRepository(FakeTransport(b"not-a-zip"))
+        repository = StaticGtfsRepository(
+            FakeTransport(b"not-a-zip"), endpoints=_feeds().static_schedule
+        )
         self.addCleanup(repository.close)
         with self.assertRaises(TfnswApiError) as raised:
             repository.get_trip("trip-1")
@@ -84,7 +78,9 @@ class StaticGtfsTests(unittest.TestCase):
 
     def test_oversized_expanded_entry_is_rejected_before_csv_parsing(self):
         body = _bundle(extra_stops="x" * (5 * 1024 * 1024))
-        repository = StaticGtfsRepository(FakeTransport(body))
+        repository = StaticGtfsRepository(
+            FakeTransport(body), endpoints=_feeds().static_schedule
+        )
         self.addCleanup(repository.close)
         with self.assertRaises(TfnswApiError) as raised:
             repository.get_trip("trip-1")
@@ -95,23 +91,33 @@ class StaticGtfsTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as directory,
             patch(
-                "hermes_sydney_transport.adapters.tfnsw.static_gtfs.time.monotonic",
+                "hermes_sydney_transport.adapters.tfnsw.repositories.static_gtfs.time.monotonic",
                 side_effect=(1.0, 2.0),
             ),
         ):
             path = Path(directory) / "static.sqlite3"
-            initial = StaticGtfsRepository(FakeTransport(_bundle()), database_path=path)
+            initial = StaticGtfsRepository(
+                FakeTransport(_bundle()),
+                endpoints=_feeds().static_schedule,
+                database_path=path,
+            )
             self.assertIsNotNone(initial.get_trip("trip-1"))
             initial.close()
 
             transport = NotModifiedTransport(_bundle())
-            reopened = StaticGtfsRepository(transport, database_path=path)
+            reopened = StaticGtfsRepository(
+                transport, endpoints=_feeds().static_schedule, database_path=path
+            )
             self.addCleanup(reopened.close)
             trip = reopened.get_trip("trip-1")
 
             self.assertIsNotNone(trip)
             self.assertEqual(trip.route_short_name, "T1")
-            self.assertEqual(transport.calls[0][0], "static_schedule")
+            self.assertEqual(transport.calls[0][0].id, "train_schedule")
+            self.assertEqual(
+                transport.calls[0][1]["if_modified_since"],
+                "Wed, 12 Aug 2026 08:00:00 GMT",
+            )
 
     def test_multi_archive_static_collision_is_deterministic_last_wins(self):
         transport = FakeTransport(
@@ -130,7 +136,10 @@ class StaticGtfsTests(unittest.TestCase):
                 ),
             )
         )
-        repository = StaticGtfsRepository(transport)
+        repository = StaticGtfsRepository(
+            transport,
+            endpoints=_feeds(TransportMode.LIGHT_RAIL).static_schedule,
+        )
         self.addCleanup(repository.close)
 
         trip = repository.get_trip("trip-1")
@@ -179,6 +188,10 @@ def _bundle(
             f"trip-1,18:25:00,18:25:00,{second_stop_id},2,Parramatta\n",
         )
     return output.getvalue()
+
+
+def _feeds(mode: TransportMode = TransportMode.TRAIN):
+    return next(item.feeds for item in MODE_SPECS if item.mode is mode)
 
 
 if __name__ == "__main__":

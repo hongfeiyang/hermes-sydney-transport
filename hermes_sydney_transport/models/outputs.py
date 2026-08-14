@@ -50,13 +50,24 @@ class PluginOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
+class CanonicalRecord(PluginOutput):
+    """Immutable semantic record safe to reuse at port and output boundaries."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        from_attributes=True,
+        strict=True,
+    )
+
+
 class ResultMetadata(PluginOutput):
     fetched_at: Timestamp
     source: str
     attribution: str
 
 
-class Coordinates(PluginOutput):
+class Coordinates(CanonicalRecord):
     latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
 
@@ -263,6 +274,12 @@ class TimeRange(PluginOutput):
 
     from_: Timestamp | None = Field(alias="from")
     to: Timestamp | None
+
+    @classmethod
+    def from_bounds(cls, from_: datetime | None, to: datetime | None) -> TimeRange:
+        """Construct a validated range without leaking the wire alias into mappers."""
+
+        return cls.model_validate({"from": from_, "to": to})
 
 
 class Alert(PluginOutput):

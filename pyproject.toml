@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-sydney-transport"
-version = "0.6.0"
+version = "0.7.0"
 description = "A Hermes Agent plugin for Sydney public transport, live road hazards, and NSW road traffic counts"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -26,11 +26,22 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
 ]
-dependencies = ["pydantic>=2.9,<3", "protobuf>=6.31,<8"]
+dependencies = [
+  "httpx>=0.28,<1",
+  "pydantic>=2.9,<3",
+  "protobuf>=6.31,<8",
+  "tenacity>=9,<10",
+]
 
 [project.optional-dependencies]
 codegen = ["grpcio-tools==1.73.1", "protobuf>=6.31,<7"]
-dev = ["mypy>=1.15,<2", "ruff>=0.11,<1"]
+dev = [
+  "coverage>=7.6,<8",
+  "hypothesis>=6.120,<7",
+  "mypy>=1.15,<2",
+  "ruff>=0.11,<1",
+  "setuptools>=77,<85",
+]
 
 [project.entry-points."hermes_agent.plugins"]
 sydney-transport = "hermes_sydney_transport"
@@ -58,6 +69,9 @@ ignore_errors = true
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+extend-select = ["C901", "PLR0912", "PLR0915"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["N999"]

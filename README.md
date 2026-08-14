@@ -191,6 +191,15 @@ parallel registration, handwritten schema paths, wrong-way imports, infrastructu
 leakage, untyped application records, oversized policy modules, and restoration of
 legacy package paths.
 
+TfNSW integration code has one enforced internal grammar: validated endpoint
+catalogs, one persistent HTTP platform, format-specific codecs, frozen Pydantic wire
+models, pure mappers, transactional stores, and semantic repositories. Expected
+partial-source outages travel as typed `Availability[T]`, so application policy does
+not use scattered exception handling. Realtime modes have one data-only extension
+point, `ModeSpec`; each row owns its policy, Alerts sources and complete endpoint bundle,
+and the composition root derives both realtime tools and the isolated static cache from
+that row. Mutation tests reject parallel mode tables and per-mode construction branches.
+
 Realtime service status and vehicle position combine:
 
 - exact service identity from departures or a fail-closed fallback resolver;

@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 
 from hermes_sydney_transport.application.capabilities import Capability
+from hermes_sydney_transport.bootstrap.modes import MODE_SPECS
+from hermes_sydney_transport.ports.realtime import TransportMode
 from hermes_sydney_transport.presentation.catalog import TOOL_SPECS
 from scripts.check_architecture import ArchitectureChecker
 
@@ -37,6 +39,23 @@ class ArchitectureContractTests(unittest.TestCase):
                 },
             )
 
+    def test_mode_registry_is_complete_and_owns_realtime_capabilities(self):
+        self.assertEqual({spec.mode for spec in MODE_SPECS}, set(TransportMode))
+        capabilities = {
+            capability
+            for spec in MODE_SPECS
+            for capability in (spec.service_status, spec.vehicle_position)
+        }
+        self.assertEqual(len(capabilities), len(MODE_SPECS) * 2)
+        self.assertTrue(all(spec.policy.mode is spec.mode for spec in MODE_SPECS))
+        self.assertTrue(
+            all(
+                len(spec.alert_sources) == len(spec.feeds.alerts)
+                and all(spec.feeds.groups())
+                for spec in MODE_SPECS
+            )
+        )
+
     def test_checker_rejects_parallel_extension_paths_and_untyped_application(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -52,9 +71,13 @@ class ArchitectureContractTests(unittest.TestCase):
                 "from datetime import datetime\n"
                 "from typing import Any, TypeVar\n"
                 "LegacyT = TypeVar('LegacyT')\n"
+                "class Result:\n"
+                "    @classmethod\n"
+                "    def model_validate(cls, value): return value\n"
                 "def parse(value: Any):\n"
                 "    endpoint = 'trip_updates'\n"
-                "    return datetime.fromisoformat(value), endpoint\n",
+                "    projected = Result.model_validate({'value': value})\n"
+                "    return datetime.fromisoformat(value), endpoint, projected\n",
                 encoding="utf-8",
             )
             (root / PACKAGE.name / "application" / "oversized.py").write_text(
@@ -79,12 +102,67 @@ class ArchitectureContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / PACKAGE.name / "presentation" / "parallel.py").write_text(
-                "from .spec import ToolSpec\nspec = ToolSpec()\n",
+                "from .spec import ToolSpec\nspec = ToolSpec()\nmode = ModeSpec()\n",
+                encoding="utf-8",
+            )
+            (root / PACKAGE.name / "bootstrap" / "parallel_modes.py").write_text(
+                "from ..ports.realtime import TransportMode as TM\n"
+                "MODE_ENDPOINTS = {TM.TRAIN: 'alternate'}\n"
+                "def bind(mode):\n"
+                "    if mode is TM.TRAIN:\n"
+                "        return 'special-case'\n",
                 encoding="utf-8",
             )
             (root / "hermes_sydney_trains").mkdir()
 
-            rules = {item.rule for item in ArchitectureChecker(root).check()}
+            adapter_root = root / PACKAGE.name / "adapters" / "tfnsw"
+            repositories = adapter_root / "repositories"
+            codecs = adapter_root / "codecs"
+            wire = adapter_root / "wire"
+            mappers = adapter_root / "mappers"
+            for path in (repositories, codecs, wire, mappers):
+                path.mkdir(exist_ok=True)
+                (path / "__init__.py").write_text("", encoding="utf-8")
+            (adapter_root / "rogue.py").write_text("value = 1\n", encoding="utf-8")
+            (repositories / "network.py").write_text(
+                "from urllib.request import Request\n"
+                "def fetch():\n"
+                "    try:\n"
+                "        return Request('https://example.invalid')\n"
+                "    except OSError:\n"
+                "        return None\n",
+                encoding="utf-8",
+            )
+            (codecs / "alternate_json.py").write_text(
+                "import json\ndef decode(value): return json.loads(value)\n",
+                encoding="utf-8",
+            )
+            (wire / "wrong_way.py").write_text(
+                "from ..repositories.network import fetch\n",
+                encoding="utf-8",
+            )
+            (repositories / "oversized.py").write_text(
+                "# oversized repository\n" * 201,
+                encoding="utf-8",
+            )
+            (mappers / "complex.py").write_text(
+                "def map_value(value):\n"
+                + "".join(
+                    f"    if value == {index}:\n        return {index}\n"
+                    for index in range(11)
+                )
+                + "    return -1\n",
+                encoding="utf-8",
+            )
+
+            violations = ArchitectureChecker(root).check()
+            rules = {item.rule for item in violations}
+            mode_rules = {
+                item.rule
+                for item in violations
+                if item.path.split(":", 1)[0]
+                == f"{PACKAGE.name}/bootstrap/parallel_modes.py"
+            }
 
         self.assertIn("forbidden-repository-path", rules)
         self.assertIn("explicit-port-types", rules)
@@ -97,6 +175,74 @@ class ArchitectureContractTests(unittest.TestCase):
         self.assertIn("application-complexity", rules)
         self.assertIn("linear-realtime-iteration", rules)
         self.assertIn("single-tool-catalog", rules)
+        self.assertTrue({"single-mode-registry", "single-mode-binding-path"} <= rules)
+        self.assertEqual(
+            mode_rules, {"single-mode-registry", "single-mode-binding-path"}
+        )
+        self.assertIn("typed-application-projection", rules)
+        self.assertIn("adapter-role-layout", rules)
+        self.assertIn("single-network-boundary", rules)
+        self.assertIn("single-json-codec", rules)
+        self.assertIn("exception-boundary", rules)
+        self.assertIn("adapter-role-dependency", rules)
+        self.assertIn("adapter-module-size", rules)
+        self.assertIn("adapter-complexity", rules)
+
+    def test_checker_rejects_untyped_non_pydantic_adapter_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copy2(ROOT / "architecture.toml", root / "architecture.toml")
+            shutil.copytree(PACKAGE, root / PACKAGE.name)
+            adapter_root = root / PACKAGE.name / "adapters" / "tfnsw"
+            (adapter_root / "wire" / "manual.py").write_text(
+                "class ManualPayload:\n    value: dict\n",
+                encoding="utf-8",
+            )
+            nested_wire = adapter_root / "wire" / "nested"
+            nested_wire.mkdir()
+            (nested_wire / "direct_base.py").write_text(
+                "from pydantic import BaseModel\n"
+                "class BypassPayload(BaseModel):\n    value: str\n",
+                encoding="utf-8",
+            )
+            (adapter_root / "repositories" / "untyped.py").write_text(
+                "import typing as t\nuntyped: t.Any = None\n",
+                encoding="utf-8",
+            )
+            (adapter_root / "mappers" / "manual_parse.py").write_text(
+                "from html.parser import HTMLParser as HP\n"
+                "class Result:\n"
+                "    @classmethod\n"
+                "    def model_validate(cls, value): return value\n"
+                "def parse(payload: bytes):\n"
+                "    HP()\n"
+                "    payload.decode(encoding='utf-8').split(',')\n"
+                "    return Result.model_validate({'value': 1})\n",
+                encoding="utf-8",
+            )
+            (adapter_root / "repositories" / "manual_parse.py").write_text(
+                "def parse(raw: bytes):\n    return raw.decode('utf-8').split('\\n')\n",
+                encoding="utf-8",
+            )
+            violations = ArchitectureChecker(root).check()
+            rules = {item.rule for item in violations}
+            parsing_paths = {
+                item.path.split(":", 1)[0]
+                for item in violations
+                if item.rule == "declarative-adapter-parsing"
+            }
+
+        self.assertIn("explicit-adapter-types", rules)
+        self.assertIn("pydantic-wire-contract", rules)
+        self.assertIn("declarative-adapter-parsing", rules)
+        self.assertIn("single-html-codec", rules)
+        self.assertIn(
+            f"{PACKAGE.name}/adapters/tfnsw/mappers/manual_parse.py", parsing_paths
+        )
+        self.assertIn(
+            f"{PACKAGE.name}/adapters/tfnsw/repositories/manual_parse.py",
+            parsing_paths,
+        )
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ class JourneyBoard:
 @dataclass(frozen=True, slots=True)
 class ServiceResolution:
     service_id: str
-    planned_time: str | None
+    planned_time: datetime | None
 
 
 class TripPlannerPort(Protocol):

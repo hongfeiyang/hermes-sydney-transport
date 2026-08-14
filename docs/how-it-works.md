@@ -50,6 +50,19 @@ transport policy, not wire parsing. Ports are consumer-owned protocols with froz
 slotted records. Adapters own HTTP, protobuf, CSV/XLSX/ZIP, SQLite, endpoint macros
 and provider-specific normalization. Bootstrap is the only composition root.
 
+Inside the TfNSW adapter, every feature follows the same provider grammar:
+
+```text
+EndpointSpec -> shared HTTP -> codec -> Pydantic wire model -> pure mapper
+             -> transactional store when needed -> semantic repository -> port
+```
+
+JSON uses one generic `model_validate_json` codec. CSV, ZIP and XLSX/XML each have
+one bounded codec. GTFS table rows are validated as Pydantic models before SQLite
+sees them. A feature cannot introduce a private HTTP client, parser, retry loop, or
+untyped mapping path because the architecture checker rejects those imports and
+locations.
+
 ## Trip Planner pipeline
 
 The JSON Trip Planner integration uses five fixed endpoints:
@@ -196,6 +209,8 @@ source quality and partial-year evidence.
 - Alert and hazard prose is treated as untrusted data and reduced to bounded text.
 - Unsupported or missing data is not replaced with a convenient default.
 - Every successful output is validated once more before serialization.
+- Expected best-effort joins use typed `Availability[T]`; application code does not
+  catch provider exceptions to decide ordinary availability.
 
 ## Extension path
 
@@ -204,8 +219,14 @@ port, write one application use case, implement the adapter method, add one
 `ToolSpec`, and bind the capability in the composition root. The generic presentation
 and registrar must remain unchanged.
 
+To add a realtime transport mode, add exactly one `ModeSpec` row. The composition
+root derives its realtime repository, static cache, service-status use case,
+vehicle-position use case, capability bindings, and closer from that row. Adding a
+parallel per-mode branch is an architecture violation.
+
 `architecture.toml` and `scripts/check_architecture.py` enforce this direction. The
 checker blocks parallel tool catalogs and registration, wrong-way imports,
-infrastructure in policy layers, manual application timestamp parsing, untyped port
-records, oversized modules, excessive branching, nested realtime loops, raw SQL
-outside adapters and legacy package restoration.
+infrastructure in policy layers, manual application timestamp parsing, non-Pydantic
+wire records, untyped records outside protobuf codecs, parser/error boundaries,
+oversized modules, excessive branching, nested realtime loops, a second mode
+registry, raw SQL outside adapters and legacy package restoration.

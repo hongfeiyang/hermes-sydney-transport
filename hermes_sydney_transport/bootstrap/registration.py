@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..adapters.tfnsw.realtime_decoder import protobuf_available
+from ..adapters.tfnsw.codecs import protobuf_available
 from ..application.capabilities import Capability
 from ..presentation.catalog import TOOL_SPECS
 from ..presentation.handlers import handler_for

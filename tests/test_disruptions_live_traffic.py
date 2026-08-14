@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import UTC, datetime
 
-from hermes_sydney_transport.adapters.tfnsw.alerts import TfnswAlertsAdapter
-from hermes_sydney_transport.adapters.tfnsw.binary_transport import BinaryResponse
-from hermes_sydney_transport.adapters.tfnsw.live_traffic import TfnswLiveTrafficAdapter
-from hermes_sydney_transport.adapters.tfnsw.live_traffic_wire import (
+from hermes_sydney_transport.adapters.tfnsw.codecs import JsonModelCodec
+from hermes_sydney_transport.adapters.tfnsw.platform import HttpPayload
+from hermes_sydney_transport.adapters.tfnsw.repositories.alerts import (
+    TfnswAlertsRepository,
+)
+from hermes_sydney_transport.adapters.tfnsw.repositories.live_traffic import (
+    TfnswLiveTrafficRepository,
+)
+from hermes_sydney_transport.adapters.tfnsw.wire.live_traffic import (
     FeatureCollectionWire,
 )
 from hermes_sydney_transport.application.alerts import GetRouteDisruptions
 from hermes_sydney_transport.application.live_traffic import GetLiveTrafficHazards
+from hermes_sydney_transport.bootstrap.modes import MODE_SPECS
 from hermes_sydney_transport.models.disruption_inputs import RouteDisruptionsInput
 from hermes_sydney_transport.models.errors import DomainError
 from hermes_sydney_transport.models.live_traffic_inputs import LiveTrafficHazardsInput
@@ -26,11 +33,11 @@ from hermes_sydney_transport.ports.realtime import TransportMode
 
 class FakeAlertsTransport:
     def __init__(self, responses):
-        self.responses = responses
+        self.responses = iter(responses)
 
-    def get_all(self, endpoint, *, if_modified_since=None):
+    def fetch(self, endpoint, *, if_modified_since=None):
         self.endpoint = endpoint
-        return self.responses
+        return next(self.responses)
 
 
 class FakeAlertsDecoder:
@@ -48,10 +55,14 @@ class FakeLiveTrafficTransport:
         self.collection = collection
         self.calls = 0
 
-    def get_collection(self, path):
+    def fetch(self, endpoint, *, if_modified_since=None):
         self.calls += 1
-        self.path = path
-        return self.collection
+        self.endpoint = endpoint
+        return HttpPayload(
+            body=self.collection.model_dump_json(by_alias=True).encode(),
+            content_type="application/json",
+            last_modified=None,
+        )
 
 
 class FixedClock:
@@ -67,13 +78,21 @@ class RouteDisruptionTests(unittest.TestCase):
         self.assertEqual(len(request.modes), 5)
 
     def test_alert_adapter_dedupes_and_keeps_source_feed_provenance(self):
-        adapter = TfnswAlertsAdapter(
-            {
-                TransportMode.TRAIN: FakeAlertsTransport(
-                    [BinaryResponse(b"1", None, None), BinaryResponse(b"2", None, None)]
-                )
-            },
+        adapter = TfnswAlertsRepository(
+            FakeAlertsTransport(
+                [HttpPayload(b"1", None, None), HttpPayload(b"2", None, None)]
+            ),
             FakeAlertsDecoder(),
+            endpoints={
+                spec.mode: spec.feeds.alerts
+                for spec in MODE_SPECS
+                if spec.mode is TransportMode.TRAIN
+            },
+            sources={
+                spec.mode: spec.alert_sources
+                for spec in MODE_SPECS
+                if spec.mode is TransportMode.TRAIN
+            },
         )
 
         result = adapter.find_alerts(
@@ -94,13 +113,21 @@ class RouteDisruptionTests(unittest.TestCase):
         )
 
     def test_alert_adapter_fails_closed_on_missing_feed(self):
-        adapter = TfnswAlertsAdapter(
-            {
-                TransportMode.TRAIN: FakeAlertsTransport(
-                    [BinaryResponse(b"1", None, None)]
-                )
-            },
+        adapter = TfnswAlertsRepository(
+            FakeAlertsTransport(
+                [HttpPayload(b"1", None, None), HttpPayload(None, None, None)]
+            ),
             FakeAlertsDecoder(),
+            endpoints={
+                spec.mode: spec.feeds.alerts
+                for spec in MODE_SPECS
+                if spec.mode is TransportMode.TRAIN
+            },
+            sources={
+                spec.mode: spec.alert_sources
+                for spec in MODE_SPECS
+                if spec.mode is TransportMode.TRAIN
+            },
         )
 
         with self.assertRaises(DomainError):
@@ -148,7 +175,7 @@ class LiveTrafficTests(unittest.TestCase):
         self.assertIsNone(request.radius_metres)
 
     def test_live_traffic_adapter_filters_by_radius_and_preserves_coordinates(self):
-        collection = FeatureCollectionWire.model_validate(
+        collection = _collection(
             {
                 "type": "FeatureCollection",
                 "layerName": "Incident",
@@ -180,7 +207,7 @@ class LiveTrafficTests(unittest.TestCase):
             }
         )
         transport = FakeLiveTrafficTransport(collection)
-        adapter = TfnswLiveTrafficAdapter(transport)
+        adapter = TfnswLiveTrafficRepository(transport)
 
         result = adapter.find_hazards(
             HazardQuery(
@@ -204,13 +231,13 @@ class LiveTrafficTests(unittest.TestCase):
         )
 
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].latitude, -33.8)
-        self.assertEqual(result[0].longitude, 151.0)
+        self.assertEqual(result[0].coordinates.latitude, -33.8)
+        self.assertEqual(result[0].coordinates.longitude, 151.0)
         self.assertEqual(result[0].distance_metres, 0)
         self.assertEqual(transport.calls, 1)
 
     def test_live_traffic_adapter_matches_suburb_before_bounded_projection(self):
-        collection = FeatureCollectionWire.model_validate(
+        collection = _collection(
             {
                 "type": "FeatureCollection",
                 "layerName": "Incident",
@@ -243,7 +270,7 @@ class LiveTrafficTests(unittest.TestCase):
                 ],
             }
         )
-        adapter = TfnswLiveTrafficAdapter(FakeLiveTrafficTransport(collection))
+        adapter = TfnswLiveTrafficRepository(FakeLiveTrafficTransport(collection))
 
         result = adapter.find_hazards(
             HazardQuery(
@@ -261,7 +288,7 @@ class LiveTrafficTests(unittest.TestCase):
         self.assertEqual(len(result[0].roads), 3)
 
     def test_live_traffic_use_case_returns_quality_note_and_count(self):
-        collection = FeatureCollectionWire.model_validate(
+        collection = _collection(
             {
                 "type": "FeatureCollection",
                 "layerName": "Incident",
@@ -292,7 +319,7 @@ class LiveTrafficTests(unittest.TestCase):
                 ],
             }
         )
-        adapter = TfnswLiveTrafficAdapter(FakeLiveTrafficTransport(collection))
+        adapter = TfnswLiveTrafficRepository(FakeLiveTrafficTransport(collection))
 
         result = GetLiveTrafficHazards(adapter, FixedClock()).execute(
             LiveTrafficHazardsInput.model_validate(
@@ -331,6 +358,12 @@ def _alert(alert_id, mode, source_feed, route_id, severity="warning"):
         stop_ids=(),
         trip_ids=(),
     )
+
+
+def _collection(payload):
+    return JsonModelCodec(
+        FeatureCollectionWire, source="Live Traffic test fixture"
+    ).decode(json.dumps(payload).encode())
 
 
 if __name__ == "__main__":

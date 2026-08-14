@@ -26,7 +26,7 @@ ErrorCode = Literal[
 ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class DomainError(Exception):
     """Safe error value that may cross an adapter/application boundary."""
 

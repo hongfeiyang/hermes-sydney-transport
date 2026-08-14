@@ -3,37 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import cast
 
 from pydantic import BaseModel
 
 from ..adapters.system_clock import SystemClock
-from ..adapters.tfnsw.alerts import TfnswAlertsAdapter
-from ..adapters.tfnsw.binary_transport import UrllibBinaryTransport
-from ..adapters.tfnsw.complete_gtfs import CompleteGtfsTimetableAdapter
-from ..adapters.tfnsw.facilities import TfnswFacilitiesAdapter
-from ..adapters.tfnsw.live_traffic import LiveTrafficTransport, TfnswLiveTrafficAdapter
-from ..adapters.tfnsw.realtime_decoder import ProtobufRealtimeDecoder
-from ..adapters.tfnsw.realtime_gateway import TfnswRealtimeRepository
-from ..adapters.tfnsw.static_gtfs import StaticGtfsRepository
-from ..adapters.tfnsw.static_resources import UrllibStaticResourceTransport
-from ..adapters.tfnsw.traffic_counts import (
-    TfnswTrafficCountsAdapter,
-    TrafficVolumeTransport,
+from ..adapters.tfnsw.codecs import ProtobufRealtimeDecoder
+from ..adapters.tfnsw.platform import TfnswHttpClient
+from ..adapters.tfnsw.repositories import (
+    TfnswAlertsRepository,
+    TfnswLiveTrafficRepository,
+    TfnswRealtimeRepository,
+    TfnswStaticResourceRepository,
+    TfnswTrafficCountsRepository,
+    TfnswTripPlannerRepository,
 )
-from ..adapters.tfnsw.trip_planner import TfnswClient
+from ..adapters.tfnsw.repositories.complete_gtfs import CompleteGtfsTimetableAdapter
+from ..adapters.tfnsw.repositories.facilities import TfnswFacilitiesAdapter
+from ..adapters.tfnsw.repositories.static_gtfs import StaticGtfsRepository
 from ..application.accessibility import GetStopAccessibility
 from ..application.alerts import GetRouteDisruptions
 from ..application.capabilities import Capability
 from ..application.live_traffic import GetLiveTrafficHazards
 from ..application.realtime import GetServiceStatus, GetVehiclePosition
-from ..application.realtime.mode_policy import (
-    BUS_POLICY,
-    FERRY_POLICY,
-    LIGHT_RAIL_POLICY,
-    METRO_POLICY,
-    TRAIN_POLICY,
-)
 from ..application.timetable import GetRouteTimetable
 from ..application.traffic_counts import (
     GetHourlyTraffic,
@@ -48,7 +41,7 @@ from ..application.trip_planner import (
     SearchStops,
 )
 from ..models.errors import DomainError
-from ..ports.realtime import TransportMode
+from .modes import MODE_SPECS
 from .settings import Settings
 
 Operation = Callable[[BaseModel], BaseModel]
@@ -59,8 +52,9 @@ class Container:
 
     def __init__(self, settings: Settings) -> None:
         clock = SystemClock()
-        trip_planner = TfnswClient(settings.tfnsw_api_key)
-        static_transport = UrllibStaticResourceTransport(settings.tfnsw_api_key)
+        tfnsw_http = TfnswHttpClient(settings.tfnsw_api_key)
+        trip_planner = TfnswTripPlannerRepository(tfnsw_http)
+        static_transport = TfnswStaticResourceRepository(tfnsw_http)
         facilities = TfnswFacilitiesAdapter(
             static_transport,
             database_path=settings.cache_directory / "facilities.sqlite3",
@@ -69,92 +63,21 @@ class Container:
             static_transport,
             database_path=settings.cache_directory / "complete-gtfs.sqlite3",
         )
-        traffic = TfnswTrafficCountsAdapter(
-            TrafficVolumeTransport(settings.tfnsw_api_key)
-        )
-        live_traffic = TfnswLiveTrafficAdapter(
-            LiveTrafficTransport(settings.tfnsw_api_key)
-        )
+        traffic = TfnswTrafficCountsRepository(tfnsw_http)
+        live_traffic = TfnswLiveTrafficRepository(tfnsw_http)
         decoder = ProtobufRealtimeDecoder()
-        train_transport = UrllibBinaryTransport(settings.tfnsw_api_key, mode="train")
-        bus_transport = UrllibBinaryTransport(settings.tfnsw_api_key, mode="bus")
-        metro_transport = UrllibBinaryTransport(settings.tfnsw_api_key, mode="metro")
-        light_rail_transport = UrllibBinaryTransport(
-            settings.tfnsw_api_key, mode="light_rail"
-        )
-        ferry_transport = UrllibBinaryTransport(settings.tfnsw_api_key, mode="ferry")
-        alerts = TfnswAlertsAdapter(
-            {
-                TransportMode.TRAIN: train_transport,
-                TransportMode.BUS: bus_transport,
-                TransportMode.METRO: metro_transport,
-                TransportMode.LIGHT_RAIL: light_rail_transport,
-                TransportMode.FERRY: ferry_transport,
-            },
+        alerts = TfnswAlertsRepository(
+            tfnsw_http,
             decoder,
+            endpoints={spec.mode: spec.feeds.alerts for spec in MODE_SPECS},
+            sources={spec.mode: spec.alert_sources for spec in MODE_SPECS},
         )
-        train_realtime = TfnswRealtimeRepository(train_transport, decoder)
-        bus_realtime = TfnswRealtimeRepository(bus_transport, decoder)
-        metro_realtime = TfnswRealtimeRepository(metro_transport, decoder)
-        light_rail_realtime = TfnswRealtimeRepository(light_rail_transport, decoder)
-        ferry_realtime = TfnswRealtimeRepository(ferry_transport, decoder)
-        train_static = StaticGtfsRepository(
-            train_transport,
-            database_path=settings.cache_directory / "train-static.sqlite3",
-        )
-        bus_static = StaticGtfsRepository(
-            bus_transport,
-            database_path=settings.cache_directory / "bus-static.sqlite3",
-        )
-        metro_static = StaticGtfsRepository(
-            metro_transport,
-            database_path=settings.cache_directory / "metro-static.sqlite3",
-        )
-        light_rail_static = StaticGtfsRepository(
-            light_rail_transport,
-            database_path=settings.cache_directory / "light-rail-static.sqlite3",
-        )
-        ferry_static = StaticGtfsRepository(
-            ferry_transport,
-            database_path=settings.cache_directory / "ferry-static.sqlite3",
-        )
-        train_status = GetServiceStatus(
-            train_realtime, trip_planner, train_static, clock, TRAIN_POLICY
-        )
-        train_position = GetVehiclePosition(
-            train_realtime, trip_planner, train_static, clock, TRAIN_POLICY
-        )
-        bus_status = GetServiceStatus(
-            bus_realtime, trip_planner, bus_static, clock, BUS_POLICY
-        )
-        bus_position = GetVehiclePosition(
-            bus_realtime, trip_planner, bus_static, clock, BUS_POLICY
-        )
-        metro_status = GetServiceStatus(
-            metro_realtime, trip_planner, metro_static, clock, METRO_POLICY
-        )
-        metro_position = GetVehiclePosition(
-            metro_realtime, trip_planner, metro_static, clock, METRO_POLICY
-        )
-        light_rail_status = GetServiceStatus(
-            light_rail_realtime,
+        mode_operations, static_closers = _bind_realtime_modes(
+            tfnsw_http,
+            decoder,
             trip_planner,
-            light_rail_static,
             clock,
-            LIGHT_RAIL_POLICY,
-        )
-        light_rail_position = GetVehiclePosition(
-            light_rail_realtime,
-            trip_planner,
-            light_rail_static,
-            clock,
-            LIGHT_RAIL_POLICY,
-        )
-        ferry_status = GetServiceStatus(
-            ferry_realtime, trip_planner, ferry_static, clock, FERRY_POLICY
-        )
-        ferry_position = GetVehiclePosition(
-            ferry_realtime, trip_planner, ferry_static, clock, FERRY_POLICY
+            settings.cache_directory,
         )
         self._operations: dict[Capability, Operation] = {
             Capability.SEARCH_STOPS: cast(
@@ -180,20 +103,6 @@ class Container:
             Capability.ROUTE_TIMETABLE: cast(
                 Operation, GetRouteTimetable(complete_timetable, clock).execute
             ),
-            Capability.TRAIN_SERVICE_STATUS: cast(Operation, train_status.execute),
-            Capability.TRAIN_VEHICLE_POSITION: cast(Operation, train_position.execute),
-            Capability.BUS_SERVICE_STATUS: cast(Operation, bus_status.execute),
-            Capability.BUS_VEHICLE_POSITION: cast(Operation, bus_position.execute),
-            Capability.METRO_SERVICE_STATUS: cast(Operation, metro_status.execute),
-            Capability.METRO_VEHICLE_POSITION: cast(Operation, metro_position.execute),
-            Capability.LIGHT_RAIL_SERVICE_STATUS: cast(
-                Operation, light_rail_status.execute
-            ),
-            Capability.LIGHT_RAIL_VEHICLE_POSITION: cast(
-                Operation, light_rail_position.execute
-            ),
-            Capability.FERRY_SERVICE_STATUS: cast(Operation, ferry_status.execute),
-            Capability.FERRY_VEHICLE_POSITION: cast(Operation, ferry_position.execute),
             Capability.LIVE_TRAFFIC_HAZARDS: cast(
                 Operation, GetLiveTrafficHazards(live_traffic, clock).execute
             ),
@@ -206,28 +115,51 @@ class Container:
             Capability.TRAFFIC_HOURLY: cast(
                 Operation, GetHourlyTraffic(traffic, clock).execute
             ),
+            **mode_operations,
         }
         if set(self._operations) != set(Capability):
             raise RuntimeError("container and capability vocabulary are out of sync")
         self._closers = (
-            train_static.close,
-            bus_static.close,
-            metro_static.close,
-            light_rail_static.close,
-            ferry_static.close,
+            *static_closers,
             facilities.close,
             complete_timetable.close,
+            tfnsw_http.close,
         )
 
     def execute(self, capability: Capability, request: BaseModel) -> BaseModel:
-        try:
-            operation = self._operations[capability]
-        except KeyError as exc:
+        operation = self._operations.get(capability)
+        if operation is None:
             raise DomainError(
                 "internal_error", f"No use case is bound for {capability.value}."
-            ) from exc
+            )
         return operation(request)
 
     def close(self) -> None:
         for close in self._closers:
             close()
+
+
+def _bind_realtime_modes(
+    http: TfnswHttpClient,
+    decoder: ProtobufRealtimeDecoder,
+    trip_planner: TfnswTripPlannerRepository,
+    clock: SystemClock,
+    cache_directory: Path,
+) -> tuple[dict[Capability, Operation], tuple[Callable[[], None], ...]]:
+    operations: dict[Capability, Operation] = {}
+    closers: list[Callable[[], None]] = []
+    for spec in MODE_SPECS:
+        realtime = TfnswRealtimeRepository(http, decoder, feeds=spec.feeds)
+        static = StaticGtfsRepository(
+            http,
+            endpoints=spec.feeds.static_schedule,
+            database_path=cache_directory / f"{spec.cache_slug}-static.sqlite3",
+        )
+        status = GetServiceStatus(realtime, trip_planner, static, clock, spec.policy)
+        position = GetVehiclePosition(
+            realtime, trip_planner, static, clock, spec.policy
+        )
+        operations[spec.service_status] = cast(Operation, status.execute)
+        operations[spec.vehicle_position] = cast(Operation, position.execute)
+        closers.append(static.close)
+    return operations, tuple(closers)

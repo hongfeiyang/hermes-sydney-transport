@@ -6,7 +6,6 @@ from collections.abc import Collection, Mapping
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ...models.errors import DomainError
 from ...models.outputs import RealtimeStop, ServiceDescription
 from ...ports.realtime import (
     GtfsTime,
@@ -71,18 +70,14 @@ def choose_service_date(
 def load_static_trip(
     repository: StaticSchedulePort, service_id: str, warnings: list[str]
 ) -> StaticTrip | None:
-    try:
-        trip = repository.get_trip(service_id)
-    except DomainError as exc:
-        if exc.code not in {
-            "static_data_unavailable",
-            "static_data_invalid",
-            "realtime_feed_unavailable",
-            "response_too_large",
-        }:
-            raise
-        warnings.append(f"Static GTFS join unavailable: {exc.message}")
+    outcome = repository.lookup_trip(service_id)
+    if not outcome.is_available:
+        message = (
+            outcome.unavailable.message if outcome.unavailable else "unknown error"
+        )
+        warnings.append(f"Static GTFS join unavailable: {message}")
         return None
+    trip = outcome.value
     if trip is None:
         warnings.append(
             "Service was not found in static GTFS; it may be added or non-timetabled."
@@ -94,10 +89,8 @@ def load_stop_references(
     repository: StaticSchedulePort,
     stop_ids: Collection[str],
 ) -> Mapping[str, StaticStopReference]:
-    try:
-        return repository.get_stop_references(stop_ids)
-    except DomainError:
-        return {}
+    outcome = repository.lookup_stop_references(stop_ids)
+    return outcome.value or {}
 
 
 def stop_reference(

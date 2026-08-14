@@ -7,7 +7,12 @@ from zoneinfo import ZoneInfo
 from ..models.errors import DomainError
 from ..models.metadata import ATTRIBUTION
 from ..models.static_inputs import RouteTimetableInput
-from ..models.static_outputs import RouteTimetableResult
+from ..models.static_outputs import (
+    RouteTimetableResult,
+    ScheduledStopTime,
+    ScheduledTrip,
+    TimetableRoute,
+)
 from ..ports.clock import Clock
 from ..ports.timetable import (
     RouteTimetablePort,
@@ -55,54 +60,38 @@ class GetRouteTimetable:
             )
         route = snapshot.route
         trips = [_trip_output(trip) for trip in snapshot.trips]
-        return RouteTimetableResult.model_validate(
-            {
-                "fetched_at": now,
-                "source": _SOURCE,
-                "attribution": ATTRIBUTION,
-                "identifier_namespace": "complete_gtfs",
-                "identifiers_match_realtime_feeds": False,
-                "route": {
-                    "id": route.id,
-                    "agency_id": route.agency_id,
-                    "short_name": route.short_name,
-                    "long_name": route.long_name,
-                    "description": route.description,
-                    "route_type": route.route_type,
-                },
-                "service_date": snapshot.service_date,
-                "direction_id": request.direction_id,
-                "stop_id": request.stop_id,
-                "trips": trips,
-                "count": len(trips),
-                "static_source_updated_at": snapshot.source_updated_at,
-                "static_cache_stale": snapshot.cache_stale,
-                "limitations": limitations,
-            }
+        return RouteTimetableResult(
+            fetched_at=now,
+            source=_SOURCE,
+            attribution=ATTRIBUTION,
+            identifier_namespace="complete_gtfs",
+            identifiers_match_realtime_feeds=False,
+            route=TimetableRoute.model_validate(route, from_attributes=True),
+            service_date=snapshot.service_date,
+            direction_id=request.direction_id,
+            stop_id=request.stop_id,
+            trips=trips,
+            count=len(trips),
+            static_source_updated_at=snapshot.source_updated_at,
+            static_cache_stale=snapshot.cache_stale,
+            limitations=limitations,
         )
 
 
-def _trip_output(item: TimetableTripRecord) -> dict[str, object]:
-    return {
-        "complete_gtfs_trip_id": item.trip_id,
-        "headsign": item.headsign,
-        "direction_id": item.direction_id,
-        "wheelchair_accessibility": item.wheelchair_accessibility,
-        "first_departure": item.first_departure,
-        "last_arrival": item.last_arrival,
-        "stop_times": [_stop_output(stop) for stop in item.stop_times],
-        "stop_count": len(item.stop_times),
-        "stop_times_truncated": item.stop_times_truncated,
-    }
+def _trip_output(item: TimetableTripRecord) -> ScheduledTrip:
+    stops = [_stop_output(stop) for stop in item.stop_times]
+    return ScheduledTrip(
+        complete_gtfs_trip_id=item.trip_id,
+        headsign=item.headsign,
+        direction_id=item.direction_id,
+        wheelchair_accessibility=item.wheelchair_accessibility,
+        first_departure=item.first_departure,
+        last_arrival=item.last_arrival,
+        stop_times=stops,
+        stop_count=len(stops),
+        stop_times_truncated=item.stop_times_truncated,
+    )
 
 
-def _stop_output(item: TimetableStopRecord) -> dict[str, object]:
-    return {
-        "stop_id": item.stop_id,
-        "stop_name": item.stop_name,
-        "sequence": item.sequence,
-        "arrival": item.arrival,
-        "departure": item.departure,
-        "pickup_type": item.pickup_type,
-        "drop_off_type": item.drop_off_type,
-    }
+def _stop_output(item: TimetableStopRecord) -> ScheduledStopTime:
+    return ScheduledStopTime.model_validate(item, from_attributes=True)

@@ -30,6 +30,11 @@ jobs:
       - name: Validate architecture
         run: python scripts/check_architecture.py
 
+      - name: Validate formatting and lint
+        run: |
+          python -m ruff check hermes_sydney_transport scripts tests
+          python -m ruff format --check hermes_sydney_transport scripts tests
+
       - name: Type-check package
         run: python -m mypy hermes_sydney_transport
 
@@ -62,7 +67,7 @@ jobs:
 
       - name: Install minimum supported runtime contracts
         run: |
-          python -m pip install "pydantic==2.9.*" "protobuf==6.31.*"
+          python -m pip install "httpx==0.28.*" "pydantic==2.9.*" "protobuf==6.31.*" "tenacity==9.*" "hypothesis==6.*"
           python -m pip install --editable . --no-deps
 
       - name: Run tests

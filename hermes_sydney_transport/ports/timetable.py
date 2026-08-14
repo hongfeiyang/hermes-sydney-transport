@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from ..models.static_inputs import RouteTimetableInput
 
@@ -34,8 +34,8 @@ class TimetableStopRecord:
 class TimetableTripRecord:
     trip_id: str
     headsign: str | None
-    direction_id: int | None
-    wheelchair_accessibility: str
+    direction_id: Literal[0, 1] | None
+    wheelchair_accessibility: Literal["accessible", "not_accessible", "unknown"]
     first_departure: datetime | None
     last_arrival: datetime | None
     stop_times: tuple[TimetableStopRecord, ...]

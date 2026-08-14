@@ -3,31 +3,26 @@ from __future__ import annotations
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
-from hermes_sydney_transport.adapters.tfnsw.realtime_decoder import (
+from hermes_sydney_transport.adapters.tfnsw.codecs.protobuf import (
     ProtobufRealtimeDecoder,
     decode_alerts,
     decode_trip_updates,
     decode_vehicle_positions,
 )
-from hermes_sydney_transport.adapters.tfnsw.realtime_gateway import (
+from hermes_sydney_transport.adapters.tfnsw.platform import HttpPayload
+from hermes_sydney_transport.adapters.tfnsw.repositories.realtime import (
     TfnswRealtimeRepository,
 )
 from hermes_sydney_transport.application.realtime import (
     GetServiceStatus,
     GetVehiclePosition,
 )
-from hermes_sydney_transport.application.realtime.mode_policy import (
-    BUS_POLICY,
-    FERRY_POLICY,
-    LIGHT_RAIL_POLICY,
-    METRO_POLICY,
-    TRAIN_POLICY,
-)
+from hermes_sydney_transport.bootstrap.modes import MODE_SPECS
+from hermes_sydney_transport.models.availability import Availability, Unavailable
 from hermes_sydney_transport.models.errors import DomainError as TfnswApiError
 from hermes_sydney_transport.models.inputs import (
     BusServiceStatusInput,
@@ -56,6 +51,11 @@ SYDNEY = ZoneInfo("Australia/Sydney")
 SERVICE_ID = "203M.2012.101.16.H.8.91818386"
 
 
+def _mode_spec(mode: str = "train"):
+    selected = TransportMode(mode)
+    return next(item for item in MODE_SPECS if item.mode is selected)
+
+
 class FixedClock:
     def __init__(self, now):
         self._now = now
@@ -77,22 +77,19 @@ class RealtimeClient:
         now,
         mode="train",
     ):
+        spec = _mode_spec(mode)
         repository = TfnswRealtimeRepository(
-            transport, ProtobufRealtimeDecoder(), cache_seconds=0
+            transport,
+            ProtobufRealtimeDecoder(),
+            feeds=spec.feeds,
+            cache_seconds=0,
         )
-        policy = {
-            "train": TRAIN_POLICY,
-            "bus": BUS_POLICY,
-            "metro": METRO_POLICY,
-            "light_rail": LIGHT_RAIL_POLICY,
-            "ferry": FERRY_POLICY,
-        }[mode]
         clock = FixedClock(now)
         self._status = GetServiceStatus(
-            repository, trip_planner, static_gtfs, clock, policy
+            repository, trip_planner, static_gtfs, clock, spec.policy
         )
         self._position = GetVehiclePosition(
-            repository, trip_planner, static_gtfs, clock, policy
+            repository, trip_planner, static_gtfs, clock, spec.policy
         )
 
     def service_status_request(self, request):
@@ -107,15 +104,14 @@ class FakeBinaryTransport:
         self.feeds = feeds
         self.calls = []
 
-    def get(self, endpoint, **kwargs):
+    def fetch(self, endpoint, **kwargs):
         self.calls.append((endpoint, kwargs))
-        return SimpleNamespace(data=self.feeds[endpoint])
-
-    def get_all(self, endpoint, **kwargs):
-        self.calls.append((endpoint, kwargs))
-        payload = self.feeds[endpoint]
+        kind = "trip_updates" if "updates" in endpoint.id else "vehicle_positions"
+        payload = self.feeds[kind]
         items = payload if isinstance(payload, tuple) else (payload,)
-        return tuple(SimpleNamespace(data=item) for item in items)
+        marker = "updates" if kind == "trip_updates" else "vehicles"
+        index = sum(1 for previous, _ in self.calls if marker in previous.id) - 1
+        return HttpPayload(items[min(index, len(items) - 1)], endpoint.accept, None)
 
 
 class FakeTripPlanner:
@@ -197,6 +193,12 @@ class FakeStaticGtfs:
             for stop_id in stop_ids
         }
 
+    def lookup_trip(self, service_id):
+        return Availability(value=self.get_trip(service_id))
+
+    def lookup_stop_references(self, stop_ids):
+        return Availability(value=self.get_stop_references(stop_ids))
+
     @staticmethod
     def _ref(stop_id, name, parent_id, parent_name, platform):
         return StaticStopReference(stop_id, name, parent_id, parent_name, platform)
@@ -217,6 +219,22 @@ class UnavailableStaticGtfs:
     def get_stop_references(self, stop_ids):
         raise TfnswApiError(
             "static_data_unavailable", "Static timetable is unavailable.", True
+        )
+
+    def lookup_trip(self, service_id):
+        return Availability(
+            value=None,
+            unavailable=Unavailable(
+                "static_data_unavailable", "Static timetable is unavailable.", True
+            ),
+        )
+
+    def lookup_stop_references(self, stop_ids):
+        return Availability(
+            value=None,
+            unavailable=Unavailable(
+                "static_data_unavailable", "Static timetable is unavailable.", True
+            ),
         )
 
 
@@ -348,7 +366,10 @@ class RealtimeClientTests(unittest.TestCase):
     def test_realtime_gateway_fetches_and_decodes_once_per_cache_window(self):
         transport = FakeBinaryTransport(trip_updates=_trip_update_feed())
         repository = TfnswRealtimeRepository(
-            transport, ProtobufRealtimeDecoder(), cache_seconds=15
+            transport,
+            ProtobufRealtimeDecoder(),
+            feeds=_mode_spec().feeds,
+            cache_seconds=15,
         )
 
         first = repository.service_snapshot(SERVICE_ID)
@@ -362,7 +383,10 @@ class RealtimeClientTests(unittest.TestCase):
     def test_realtime_gateway_single_flights_concurrent_readers(self):
         transport = FakeBinaryTransport(trip_updates=_trip_update_feed())
         repository = TfnswRealtimeRepository(
-            transport, ProtobufRealtimeDecoder(), cache_seconds=15
+            transport,
+            ProtobufRealtimeDecoder(),
+            feeds=_mode_spec().feeds,
+            cache_seconds=15,
         )
 
         with ThreadPoolExecutor(max_workers=8) as executor:
@@ -384,7 +408,10 @@ class RealtimeClientTests(unittest.TestCase):
             )
         )
         repository = TfnswRealtimeRepository(
-            transport, ProtobufRealtimeDecoder(), cache_seconds=0
+            transport,
+            ProtobufRealtimeDecoder(),
+            feeds=_mode_spec().feeds,
+            cache_seconds=0,
         )
 
         snapshot = repository.service_snapshot(SERVICE_ID)
@@ -400,7 +427,10 @@ class RealtimeClientTests(unittest.TestCase):
             )
         )
         repository = TfnswRealtimeRepository(
-            transport, ProtobufRealtimeDecoder(), cache_seconds=0
+            transport,
+            ProtobufRealtimeDecoder(),
+            feeds=_mode_spec().feeds,
+            cache_seconds=0,
         )
 
         snapshot = repository.vehicle_snapshot(SERVICE_ID)

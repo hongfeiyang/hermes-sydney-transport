@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from hermes_sydney_transport.adapters.tfnsw.traffic_counts import (
-    TfnswTrafficCountsAdapter,
+from hermes_sydney_transport.adapters.tfnsw.platform import HttpPayload
+from hermes_sydney_transport.adapters.tfnsw.repositories.traffic_counts import (
+    TfnswTrafficCountsRepository,
 )
 from hermes_sydney_transport.application.traffic_counts import (
     GetHourlyTraffic,
@@ -35,9 +37,11 @@ class FakeTrafficTransport:
         self.payloads = list(payloads)
         self.queries = []
 
-    def query(self, sql):
-        self.queries.append(sql)
-        return self.payloads.pop(0)
+    def fetch(self, endpoint, *, params=None, if_modified_since=None):
+        self.queries.append(params["q"])
+        return HttpPayload(
+            json.dumps(self.payloads.pop(0)).encode(), "application/json", None
+        )
 
 
 def payload(rows):
@@ -75,7 +79,7 @@ class TrafficVolumeClientTests(unittest.TestCase):
             ]
         )
         use_case = SearchTrafficStations(
-            TfnswTrafficCountsAdapter(transport), self.clock
+            TfnswTrafficCountsRepository(transport), self.clock
         )
         request = TrafficStationSearchInput.model_validate({"query": "O'Brien"})
 
@@ -119,7 +123,9 @@ class TrafficVolumeClientTests(unittest.TestCase):
                 )
             ]
         )
-        use_case = GetTrafficSummary(TfnswTrafficCountsAdapter(transport), self.clock)
+        use_case = GetTrafficSummary(
+            TfnswTrafficCountsRepository(transport), self.clock
+        )
         request = TrafficVolumeSummaryInput.model_validate(
             {"station_id": "02015", "year": 2018}
         )
@@ -146,7 +152,7 @@ class TrafficVolumeClientTests(unittest.TestCase):
             **{f"hour_{hour:02d}": hour for hour in range(24)},
         }
         transport = FakeTrafficTransport([payload([row])])
-        use_case = GetHourlyTraffic(TfnswTrafficCountsAdapter(transport), self.clock)
+        use_case = GetHourlyTraffic(TfnswTrafficCountsRepository(transport), self.clock)
         request = TrafficVolumeHourlyInput.model_validate(
             {
                 "station_key": "58308",

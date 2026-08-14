@@ -31,8 +31,5 @@ class Settings:
 
     @classmethod
     def is_available(cls, environment: Mapping[str, str] | None = None) -> bool:
-        try:
-            cls.from_environment(environment)
-        except DomainError:
-            return False
-        return True
+        source = os.environ if environment is None else environment
+        return bool(source.get("TFNSW_API_KEY", "").strip())

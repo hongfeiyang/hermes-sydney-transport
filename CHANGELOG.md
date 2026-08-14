@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0 - 2026-08-14
+
+- Refactored every TfNSW integration into one enforced catalogs/platform/codecs/wire/
+  mappers/stores/repositories pipeline.
+- Added mutation-tested architecture gates for the single tool and transport-mode
+  extension paths, parsing boundaries, shared wire family, typing, size and complexity.
+- Consolidated HTTP authentication, retry, redirect, timeout, response limits and error
+  translation into one persistent transport.
+- Replaced raw provider projections with strict Pydantic wire contracts and typed
+  availability results.
+- Added atomic static-resource caches, conditional mode-GTFS refresh and automatic
+  facilities cache migration to schema v2.
+
 ## 0.6.0 - 2026-08-14
 
 - Expand the public tool catalog to 22 tools across `sydney_transport` and

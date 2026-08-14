@@ -6,7 +6,8 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .outputs import PluginOutput, ResultMetadata, Timestamp
+from .disruption_inputs import AlertCause, AlertEffect
+from .outputs import CanonicalRecord, PluginOutput, ResultMetadata, Timestamp
 
 
 class DisruptionQuery(PluginOutput):
@@ -15,16 +16,16 @@ class DisruptionQuery(PluginOutput):
     route_id: str | None
     trip_id: str | None
     requested_at: Timestamp
-    causes: list[str]
-    effects: list[str]
+    causes: list[AlertCause]
+    effects: list[AlertEffect]
 
 
-class DisruptionTimeRange(PluginOutput):
+class DisruptionTimeRange(CanonicalRecord):
     start: Timestamp | None
     end: Timestamp | None
 
 
-class DisruptionSelector(PluginOutput):
+class DisruptionSelector(CanonicalRecord):
     agency_id: str | None
     route_id: str | None
     route_type: int | None
@@ -33,18 +34,10 @@ class DisruptionSelector(PluginOutput):
     direction_id: int | None
 
 
-class RouteDisruption(PluginOutput):
+class RouteDisruption(CanonicalRecord):
     id: str
     mode: Literal["train", "bus", "metro", "light_rail", "ferry"]
-    source_feed: Literal[
-        "sydneytrains",
-        "nswtrains",
-        "buses",
-        "regionbuses",
-        "metro",
-        "lightrail",
-        "ferries",
-    ]
+    source_feed: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,39}$", max_length=40)
     title: str
     description: str
     cause: str
