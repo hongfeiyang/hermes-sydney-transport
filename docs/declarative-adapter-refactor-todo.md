@@ -1,6 +1,6 @@
 # Declarative adapter refactor tracker
 
-Status: implementation complete; deployment verification in progress
+Status: complete; version 0.7.1 is deployed and verified in Hermes
 
 This tracker turns the adapter design into an executable contract. A phase is complete
 only when its checker rules, mutation-style architecture tests, deterministic contract
@@ -84,7 +84,7 @@ grandfathered violations, and raised budgets are not accepted.
 - [x] Remove manual nested output dictionaries from the application use case
 - [x] Keep suburb matching against complete upstream roads while bounding returned roads
 - [x] Pass architecture, lint, strict typing, and deterministic tests
-- [ ] Repeat bounded credentialed smoke against the refactored installed build
+- [x] Repeat bounded credentialed smoke against the refactored installed build
 
 ## Remaining migrations
 
@@ -110,8 +110,22 @@ grandfathered violations, and raised budgets are not accepted.
 - [x] One-command `./scripts/verify.sh all` in the Python 3.12 development environment
 - [x] Python 3.12 and 3.13 CI configuration
 - [x] Minimum-dependency CI configuration
-- [ ] Real Hermes `PluginManager` load with exactly 22 tools
-- [ ] Bounded credentialed Trip Planner, Alerts, Live Traffic, accessibility, and
+- [x] Real Hermes `PluginManager` load with exactly 22 tools
+- [x] Bounded credentialed Trip Planner, Alerts, Live Traffic, accessibility, and
   timetable smoke tests without secrets or response bodies
-- [ ] Installed plugin contains no superseded modules
-- [ ] Repository is clean, committed, and synchronized with public `main`
+- [x] Installed plugin contains no superseded modules
+- [x] Repository is clean, committed, and synchronized with public `main`
+
+## Deployment evidence recorded on 2026-08-14
+
+- [x] Native directory and wheel entry-point loading both register the exact 22-tool
+  manifest under Hermes 0.20.0
+- [x] Live Trip Planner stop search and Alerts return validated results
+- [x] Live Alerts v2 route disruptions and NSW Live Traffic hazards return validated
+  results
+- [x] Static facilities automatically migrate cache schema v1 to v2 and return a
+  validated accessibility result
+- [x] Complete GTFS returns a validated timetable result and a new process reuses the
+  persistent 540 MB index; the measured warm query completed in 0.08 seconds
+- [x] The live checks printed only status/count metadata; no credential or provider
+  response body was recorded
