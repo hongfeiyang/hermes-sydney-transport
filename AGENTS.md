@@ -72,6 +72,9 @@ pieces into semantic ports. Repositories and mappers may not catch exceptions or
 bytes, line-oriented text, HTML, timestamps, or dictionary-shaped models.
 Every public class under `wire/` must belong to the shared Pydantic model family;
 `Any` and `TypedDict` are forbidden outside the dynamic protobuf codec boundary.
+JSON-native wire modules are declaration-only: express alternate shapes through
+bounded Pydantic unions and containers, never handwritten functions, lambdas, or
+validator callbacks. Normalize already validated alternatives in pure mappers.
 Expected partial-source failure crosses application boundaries as typed
 `Availability[T]`, never as exception-driven normal control flow.
 

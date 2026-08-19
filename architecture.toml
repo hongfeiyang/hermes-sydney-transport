@@ -57,6 +57,14 @@ forbid_any_roles = ["catalogs", "platform", "wire", "mappers", "stores", "reposi
 require_pydantic_wire_models = true
 wire_model_roots = ["WireModel"]
 wire_timestamp_paths = ["adapters/tfnsw/wire/timestamps.py"]
+# JSON-native wire models are declaration-only. These shared scalar/timestamp and
+# text-row contracts are the only wire modules allowed to define coercion behavior.
+imperative_wire_paths = [
+  "adapters/tfnsw/wire/base.py",
+  "adapters/tfnsw/wire/facilities.py",
+  "adapters/tfnsw/wire/gtfs.py",
+  "adapters/tfnsw/wire/timestamps.py",
+]
 forbid_manual_parsing_roles = ["repositories", "mappers"]
 
 [adapter_roles.catalogs]

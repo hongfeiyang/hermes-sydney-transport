@@ -40,7 +40,7 @@ def map_leg(item: JourneyLegWire) -> TripLeg:
         else None,
         distance_metres=item.distance,
         is_realtime_controlled=item.is_realtime_controlled,
-        realtime_status=item.realtime_status,
+        realtime_status=_realtime_status(item.realtime_status),
         cancelled=_reported_flag(
             item.is_cancelled,
             item.properties.is_cancelled,
@@ -99,3 +99,9 @@ def _mode(product_class: int | None, missing_transport: bool) -> str:
 def _reported_flag(*values: bool | None) -> bool | None:
     present = tuple(value for value in values if value is not None)
     return any(present) if present else None
+
+
+def _realtime_status(value: str | tuple[str, ...] | None) -> str | None:
+    if isinstance(value, tuple):
+        return ", ".join(value) or None
+    return value

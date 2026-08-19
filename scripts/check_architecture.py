@@ -51,6 +51,7 @@ class ArchitectureChecker:
             self._check_adapter_role_dependencies,
             self._check_adapter_explicit_types,
             self._check_wire_model_shape,
+            self._check_declarative_wire_shapes,
             self._check_wire_timestamp_ownership,
             self._check_adapter_boundary_imports,
             self._check_manual_adapter_parsing,
@@ -662,6 +663,63 @@ class ArchitectureChecker:
             if not is_shared_wire(name)
         ]
 
+    def _check_declarative_wire_shapes(self) -> list[Violation]:
+        """Keep JSON-native wire models free of handwritten coercion logic."""
+
+        configured = self.policy.get("adapter_contract", {})
+        if "imperative_wire_paths" not in configured:
+            return []
+        adapter_root = self.package / configured["root"]
+        wire_root = adapter_root / "wire"
+        allowed = tuple(configured["imperative_wire_paths"])
+        validator_apis = {
+            "AfterValidator",
+            "BeforeValidator",
+            "PlainValidator",
+            "WrapValidator",
+            "field_validator",
+            "model_validator",
+        }
+        violations: list[Violation] = []
+        for path in sorted(wire_root.rglob("*.py")):
+            relative = path.relative_to(self.package).as_posix()
+            if self._path_matches(relative, allowed):
+                continue
+            tree = self._tree(path)
+            pydantic_aliases = self._pydantic_module_aliases(tree)
+            imperative_nodes: list[ast.AST] = []
+            for node in ast.walk(tree):
+                is_function = isinstance(
+                    node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+                )
+                is_validator_import = (
+                    isinstance(node, ast.ImportFrom)
+                    and node.module
+                    and (
+                        node.module == "pydantic" or node.module.startswith("pydantic.")
+                    )
+                    and any(alias.name in validator_apis for alias in node.names)
+                )
+                is_qualified_validator = (
+                    isinstance(node, ast.Attribute)
+                    and node.attr in validator_apis
+                    and self._attribute_root_name(node) in pydantic_aliases
+                )
+                if is_function or is_validator_import or is_qualified_validator:
+                    imperative_nodes.append(node)
+            if imperative_nodes:
+                first = min(imperative_nodes, key=lambda node: node.lineno)
+                violations.append(
+                    Violation(
+                        f"{path.relative_to(self.root)}:{first.lineno}",
+                        "declarative-wire-shape",
+                        "JSON-native wire modules contain declarations only; "
+                        "represent alternate upstream shapes with typed unions and "
+                        "normalize validated values in mappers",
+                    )
+                )
+        return violations
+
     def _check_wire_timestamp_ownership(self) -> list[Violation]:
         """Keep provider timestamp coercion behind one shared Pydantic contract."""
 
@@ -1198,6 +1256,24 @@ class ArchitectureChecker:
                     if alias.name in {"Any", "TypedDict"}:
                         names[alias.asname or alias.name] = alias.name
         return typing_modules, names
+
+    @staticmethod
+    def _pydantic_module_aliases(tree: ast.Module) -> set[str]:
+        aliases: set[str] = set()
+        for node in tree.body:
+            if not isinstance(node, ast.Import):
+                continue
+            for imported in node.names:
+                if imported.name == "pydantic" or imported.name.startswith("pydantic."):
+                    aliases.add(imported.asname or imported.name.split(".", 1)[0])
+        return aliases
+
+    @staticmethod
+    def _attribute_root_name(node: ast.Attribute) -> str | None:
+        value: ast.AST = node
+        while isinstance(value, ast.Attribute):
+            value = value.value
+        return value.id if isinstance(value, ast.Name) else None
 
     @staticmethod
     def _resolved_dynamic_references(

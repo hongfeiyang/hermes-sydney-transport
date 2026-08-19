@@ -148,6 +148,11 @@ Raw mappings do not pass from codecs into repositories. Public `wire/` records i
 nested wire module must inherit from the shared frozen `WireModel` family.
 Wire modules may declare shared timestamp types but cannot instantiate another datetime
 adapter or parser; the architecture checker rejects parallel timestamp contracts.
+JSON-native wire modules are declaration-only: alternate provider shapes must be
+expressed with bounded Pydantic unions and container types, without handwritten
+functions, lambdas, or validator callbacks. Imperative coercion is confined to the
+machine-readable inventory of shared scalar/timestamp and CSV/XLSX row contracts;
+validated shape normalization belongs in pure mappers.
 Dynamic `Any` values are confined to protobuf codecs; catalogs, platform, wire,
 mappers, stores, and repositories are explicitly typed.
 

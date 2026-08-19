@@ -13,11 +13,21 @@ from .base import (
     NullableInt,
     NullableNonNegativeInt,
     NullableText,
+    ShortText,
     WireModel,
 )
 from .timestamps import NullableTimestamp
 
 LaxInt = Annotated[int, Field(strict=False)]
+
+
+RealtimeStatus = (
+    NullableText
+    | Annotated[
+        tuple[ShortText, ...],
+        Field(max_length=10),
+    ]
+)
 
 
 class ApiErrorWire(WireModel):
@@ -146,7 +156,7 @@ class JourneyLegWire(WireModel):
     is_realtime_controlled: NullableBool = Field(
         default=None, alias="isRealtimeControlled"
     )
-    realtime_status: NullableText = Field(default=None, alias="realtimeStatus")
+    realtime_status: RealtimeStatus = Field(default=None, alias="realtimeStatus")
     is_cancelled: NullableBool = Field(default=None, alias="isCancelled")
     origin: LocationWire | None = None
     destination: LocationWire | None = None

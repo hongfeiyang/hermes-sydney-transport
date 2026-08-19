@@ -442,6 +442,7 @@ class TfnswClientTests(unittest.TestCase):
                                 {
                                     "duration": 600,
                                     "isRealtimeControlled": True,
+                                    "realtimeStatus": ["MONITORED"],
                                     "origin": {
                                         "id": "2000331",
                                         "name": "Central Platform 11",
@@ -534,6 +535,7 @@ class TfnswClientTests(unittest.TestCase):
         self.assertEqual(journey["arrival_time_estimated"], "2026-08-12T10:31:00+10:00")
         self.assertEqual(journey["alert_ids"], ["alert-1"])
         self.assertEqual(journey["legs"][0]["mode"], "train")
+        self.assertEqual(journey["legs"][0]["realtime_status"], "MONITORED")
         path, params = transport.calls[0]
         self.assertEqual(path, "/trip")
         self.assertIn(("depArrMacro", "arr"), params)

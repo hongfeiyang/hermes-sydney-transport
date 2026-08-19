@@ -254,6 +254,54 @@ class ArchitectureContractTests(unittest.TestCase):
             parsing_paths,
         )
 
+    def test_checker_rejects_imperative_json_wire_coercion(self):
+        mutations = {
+            "helper function": (
+                "def flatten(value: object) -> object:\n"
+                "    return ', '.join(value) if isinstance(value, list) else value\n"
+            ),
+            "lambda": "flatten = lambda value: value\n",
+            "aliased validator import": (
+                "from pydantic import BeforeValidator as ManualValidator\n"
+                "ManualStatus = Annotated[str, ManualValidator(str.strip)]\n"
+            ),
+            "qualified validator": (
+                "import pydantic as pd\n"
+                "ManualStatus = Annotated[str, pd.BeforeValidator(str.strip)]\n"
+            ),
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                shutil.copy2(ROOT / "architecture.toml", root / "architecture.toml")
+                shutil.copytree(PACKAGE, root / PACKAGE.name)
+                wire_path = (
+                    root
+                    / PACKAGE.name
+                    / "adapters"
+                    / "tfnsw"
+                    / "wire"
+                    / "trip_planner.py"
+                )
+                wire_path.write_text(
+                    wire_path.read_text(encoding="utf-8") + "\n" + mutation,
+                    encoding="utf-8",
+                )
+
+                violations = ArchitectureChecker(root).check()
+                declarative_wire_paths = {
+                    item.path.split(":", 1)[0]
+                    for item in violations
+                    if item.rule == "declarative-wire-shape"
+                }
+
+            self.assertEqual(
+                declarative_wire_paths,
+                {
+                    f"{PACKAGE.name}/adapters/tfnsw/wire/trip_planner.py",
+                },
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
